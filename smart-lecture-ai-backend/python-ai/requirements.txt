@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+moviepy
+pydub
+vosk
+opencv-python-headless
+pillow
+imagehash
+pytesseract
+transformers
+torch

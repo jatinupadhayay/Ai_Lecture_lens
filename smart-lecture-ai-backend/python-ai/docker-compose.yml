@@ -1,0 +1,53 @@
+version: '3.8'
+services:
+  mongo:
+    image: mongo:6
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  redis:
+    image: redis:7
+    restart: always
+    ports:
+      - "6379:6379"
+
+  python-ai:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    volumes:
+      - ./python-ai/uploads:/app/uploads
+      - ./python-ai:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/smartlecture
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - TRANSCRIBE_SERVICE_URL=http://python-ai:8000/transcribe
+      - EXTRACT_SERVICE_URL=http://python-ai:8000/extract
+      - QUIZ_SERVICE_URL=http://python-ai:8000/quiz
+      - JWT_SECRET=devsecret
+      - STORAGE_LOCAL_PATH=/app/uploads
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - ./backend/uploads:/app/uploads
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - redis
+      - python-ai
+
+volumes:
+  mongo-data:

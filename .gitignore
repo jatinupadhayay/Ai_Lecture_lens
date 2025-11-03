@@ -1,0 +1,54 @@
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Vercel
+.vercel/
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# IDE/editor local files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+*.egg-info/
+*.eggs
+
+# Large backend folders / uploads / models
+smart-lecture-ai-backend/backend/uploads/
+smart-lecture-ai-backend/backend/models/
+data/processed/audio.wav
+
+# Git LFS or skip large file types
+*.mp4
+*.wav
+*.mdl
