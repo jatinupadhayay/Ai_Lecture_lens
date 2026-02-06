@@ -48,7 +48,7 @@ Smart Lecture Lens is an AI-powered educational platform that transforms traditi
 
 ```mermaid
 graph TD
-    Client[Frontend (Next.js)] -->|Uploads/API| API[Backend API (Node.js)]
+    
     API -->|Metadata| DB[(MongoDB)]
     API -->|Jobs| Queue[(Redis Queue)]
     
