@@ -71,7 +71,7 @@ export default function SummariesPage() {
 
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE || "http://localhost:5000/api"}/lectures/${lectureId}/process`,
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"}/lectures/${lectureId}/process`,
         {
           method: "POST",
           headers: {

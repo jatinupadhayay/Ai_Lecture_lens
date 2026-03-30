@@ -8,6 +8,7 @@ const OpenAI = require("openai");
 
 // Get Python path from .env or fallback to system python
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
+const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -83,7 +84,7 @@ async function downloadYouTubeVideo(url, outDir) {
 exports.transcribe = async (filePath) => {
   log("🧠 Transcribing:", filePath);
   try {
-    const result = spawnSync(PYTHON_VENV_PATH, ["transcriber.py", filePath], { encoding: "utf8" });
+    const result = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "transcriber.py"), filePath], { encoding: "utf8" });
 
     if (result.error) throw new Error(result.error.message);
     if (result.stderr) log("⚠️ Transcriber stderr:", result.stderr);
@@ -106,7 +107,7 @@ exports.transcribe = async (filePath) => {
 exports.extract = async (filePath) => {
   log("🖼 Extracting frames from:", filePath);
   try {
-    const result = spawnSync(PYTHON_VENV_PATH, ["extractor.py", filePath], { encoding: "utf8" });
+    const result = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "extractor.py"), filePath], { encoding: "utf8" });
 
     if (result.error) throw new Error(result.error.message);
     if (result.stderr) log("⚠️ Extractor stderr:", result.stderr);
@@ -133,7 +134,7 @@ exports.generateQuiz = async (text, numQuestions = 5) => {
 
   // Local quiz generation
   try {
-    const pyRes = spawnSync(PYTHON_VENV_PATH, ["quiz_generator.py", text], { encoding: "utf8" });
+    const pyRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "quiz_generator.py"), text], { encoding: "utf8" });
     if (pyRes.stderr) log("⚠️ quiz_generator stderr:", pyRes.stderr);
     const output = pyRes.stdout.toString().trim();
     log("📄 Local quiz output length:", output.length);
@@ -181,13 +182,13 @@ exports.dualSummarize = async (cleanText) => {
   log("🧩 dualSummarize called. Text length:", cleanText?.length || 0);
   try {
     // Clean text
-    const cleanRes = spawnSync(PYTHON_VENV_PATH, ["cleaner.py", cleanText], { encoding: "utf8" });
+    const cleanRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanText], { encoding: "utf8" });
     if (cleanRes.stderr) log("⚠️ cleaner stderr:", cleanRes.stderr);
     const cleaned = cleanRes.stdout.toString();
     log("✅ Text cleaned. Length:", cleaned.length);
 
     // Local summarizer
-    const local = spawnSync(PYTHON_VENV_PATH, ["summarize.py", cleaned], { encoding: "utf8" });
+    const local = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "summarize.py"), cleaned], { encoding: "utf8" });
     if (local.stderr) log("⚠️ summarizer stderr:", local.stderr);
     const localSummary = local.stdout.toString().trim();
     log("✅ Local summary generated. Length:", localSummary.length);

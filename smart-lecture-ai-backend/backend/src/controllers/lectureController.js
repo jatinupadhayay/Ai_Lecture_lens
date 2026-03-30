@@ -5,7 +5,6 @@ const Lecture = require("../models/Lecture");
 const { Queue } = require("bullmq");
 const { connection } = require("../queues");
 const aiService = require("../services/aiService");
-const { v4: uuidv4 } = require("uuid");
 
 const aiQueue = new Queue("ai-jobs", { connection });
 

@@ -57,8 +57,9 @@ const lectureSchema = new mongoose.Schema(
 
     // ✅ Quiz generated from lecture
     quiz: {
-      questions: [{ type: String }],
-      answers: [{ type: String }],
+      local: [{ type: String }],
+      ai: [{ type: String }],
+      merged: [{ type: String }],
     },
 
     createdAt: { type: Date, default: Date.now },
