@@ -15,88 +15,65 @@ import { User, Mail, Calendar, Trophy, BookOpen, Brain, TrendingUp, Save, Edit }
 export default function ProfilePage() {
   const { user, updateProfile, lectures, getUserQuizAttempts } = useAppStore()
   const [isEditing, setIsEditing] = useState(false)
-  const [formData, setFormData] = useState({
-    name: user?.name || "",
-    email: user?.email || "",
-  })
+  const [formData, setFormData] = useState({ name: user?.name || "", email: user?.email || "" })
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState("")
 
   if (!user) return null
 
   const quizAttempts = getUserQuizAttempts()
-  const completedLectures = lectures.filter((lecture) => lecture.completionStatus === 100).length
-  const averageScore =
-    user.scores.length > 0 ? Math.round(user.scores.reduce((a, b) => a + b, 0) / user.scores.length) : 0
+  const completedLectures = lectures.filter((l: any) => l.status === "completed").length
+  const scores = user.scores || []
+  const avgScore = scores.length > 0 ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0
 
   const handleSave = async () => {
     setIsSaving(true)
     try {
       updateProfile(formData)
       setIsEditing(false)
-      setSaveMessage("Profile updated successfully!")
+      setSaveMessage("Profile updated")
       setTimeout(() => setSaveMessage(""), 3000)
-    } catch (error) {
-      setSaveMessage("Failed to update profile")
+    } catch {
+      setSaveMessage("Failed to update")
     } finally {
       setIsSaving(false)
     }
   }
 
-  const handleCancel = () => {
-    setFormData({
-      name: user.name,
-      email: user.email,
-    })
-    setIsEditing(false)
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Profile</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage your account settings and view your progress</p>
+          <h1 className="text-2xl font-bold tracking-tight">Profile</h1>
+          <p className="text-muted-foreground text-sm mt-1">Manage your account</p>
         </div>
         {!isEditing && (
-          <Button onClick={() => setIsEditing(true)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Profile
+          <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+            <Edit className="mr-1.5 h-3.5 w-3.5" /> Edit
           </Button>
         )}
       </div>
 
-      {saveMessage && (
-        <Alert>
-          <AlertDescription>{saveMessage}</AlertDescription>
-        </Alert>
-      )}
+      {saveMessage && <Alert><AlertDescription>{saveMessage}</AlertDescription></Alert>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Profile Information */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Profile card */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Personal Information
-              </CardTitle>
-              <CardDescription>Update your personal details and contact information</CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" /> Personal Info</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-4 mb-6">
-                <Avatar className="h-20 w-20">
-                  <AvatarFallback className="bg-blue-600 text-white text-2xl">
-                    {user.name.charAt(0).toUpperCase()}
+              <div className="flex items-center gap-4 mb-2">
+                <Avatar className="h-16 w-16">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xl font-medium">
+                    {user.name?.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <h3 className="text-xl font-semibold">{user.name}</h3>
-                  <p className="text-gray-600 dark:text-gray-400">{user.email}</p>
-                  <Badge variant="outline" className="mt-1">
-                    Student
-                  </Badge>
+                  <h3 className="text-lg font-semibold">{user.name}</h3>
+                  <p className="text-sm text-muted-foreground">{user.email}</p>
+                  <Badge variant="outline" className="mt-1 text-xs capitalize">{user.role || "student"}</Badge>
                 </div>
               </div>
 
@@ -104,39 +81,29 @@ export default function ProfilePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
+                  <Label>Full Name</Label>
                   {isEditing ? (
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                    />
+                    <Input value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))} />
                   ) : (
-                    <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded-md">{user.name}</div>
+                    <div className="p-2 bg-muted/50 rounded-md text-sm">{user.name}</div>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
+                  <Label>Email</Label>
                   {isEditing ? (
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
-                    />
+                    <Input type="email" value={formData.email} onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))} />
                   ) : (
-                    <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded-md">{user.email}</div>
+                    <div className="p-2 bg-muted/50 rounded-md text-sm">{user.email}</div>
                   )}
                 </div>
               </div>
 
               {isEditing && (
-                <div className="flex gap-2 pt-4">
-                  <Button onClick={handleSave} disabled={isSaving}>
-                    <Save className="mr-2 h-4 w-4" />
-                    {isSaving ? "Saving..." : "Save Changes"}
+                <div className="flex gap-2 pt-2">
+                  <Button size="sm" onClick={handleSave} disabled={isSaving}>
+                    <Save className="mr-1.5 h-3.5 w-3.5" /> {isSaving ? "Saving..." : "Save"}
                   </Button>
-                  <Button variant="outline" onClick={handleCancel}>
+                  <Button size="sm" variant="outline" onClick={() => { setIsEditing(false); setFormData({ name: user.name, email: user.email }) }}>
                     Cancel
                   </Button>
                 </div>
@@ -144,153 +111,84 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Learning Statistics */}
+          {/* Stats */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Learning Statistics
-              </CardTitle>
-              <CardDescription>Your learning journey at a glance</CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4" /> Statistics</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{lectures.length}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Total Lectures</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{completedLectures}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Completed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">{quizAttempts.length}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Quizzes Taken</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-yellow-600">{averageScore}%</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Avg Score</div>
-                </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                {[
+                  { label: "Lectures", value: lectures.length, color: "text-primary" },
+                  { label: "Completed", value: completedLectures, color: "text-emerald-500" },
+                  { label: "Quizzes", value: quizAttempts.length, color: "text-violet-500" },
+                  { label: "Avg Score", value: `${avgScore}%`, color: "text-amber-500" },
+                ].map((s) => (
+                  <div key={s.label}>
+                    <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
+                  </div>
+                ))}
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Recent Quiz Scores */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Trophy className="h-5 w-5" />
-                Recent Quiz Scores
-              </CardTitle>
-              <CardDescription>Your latest quiz performance</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {user.scores.length > 0 ? (
-                <div className="space-y-3">
-                  {user.scores
-                    .slice(-5)
-                    .reverse()
-                    .map((score, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Brain className="h-4 w-4 text-purple-600" />
-                          <span className="text-sm">Quiz {user.scores.length - index}</span>
-                        </div>
-                        <Badge variant={score >= 70 ? "default" : "secondary"}>{score}%</Badge>
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <p className="text-gray-600 dark:text-gray-400 text-center py-4">No quiz scores yet</p>
-              )}
             </CardContent>
           </Card>
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Stats */}
+        <div className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Quick Stats</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm">Attendance</span>
-                </div>
-                <Badge variant="outline">{user.attendance}%</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="h-4 w-4 text-green-600" />
-                  <span className="text-sm">Completion Rate</span>
-                </div>
-                <Badge variant="outline">{Math.round((completedLectures / lectures.length) * 100)}%</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Trophy className="h-4 w-4 text-yellow-600" />
-                  <span className="text-sm">Best Score</span>
-                </div>
-                <Badge variant="outline">{user.scores.length > 0 ? Math.max(...user.scores) : 0}%</Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Account Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Account Information</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-gray-600" />
-                <span className="text-gray-600 dark:text-gray-400">Email verified</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-gray-600" />
-                <span className="text-gray-600 dark:text-gray-400">Member since Jan 2024</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-gray-600" />
-                <span className="text-gray-600 dark:text-gray-400">Student account</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Achievements */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Achievements</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">Quick Stats</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {[
+                { icon: Calendar, label: "Attendance", value: `${user.attendance || 0}%`, color: "text-primary" },
+                { icon: BookOpen, label: "Completion", value: `${lectures.length > 0 ? Math.round((completedLectures / lectures.length) * 100) : 0}%`, color: "text-emerald-500" },
+                { icon: Trophy, label: "Best Score", value: `${scores.length > 0 ? Math.max(...scores) : 0}%`, color: "text-amber-500" },
+              ].map((s) => (
+                <div key={s.label} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <s.icon className={`h-4 w-4 ${s.color}`} />
+                    <span className="text-sm">{s.label}</span>
+                  </div>
+                  <Badge variant="outline" className="text-xs">{s.value}</Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">Account</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" /> Email verified</div>
+              <div className="flex items-center gap-2"><User className="h-3.5 w-3.5" /> <span className="capitalize">{user.role || "Student"}</span> account</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">Achievements</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
               {completedLectures >= 1 && (
-                <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                  <Trophy className="h-4 w-4 text-green-600" />
-                  <span className="text-sm text-green-700 dark:text-green-300">First Lecture Complete</span>
+                <div className="flex items-center gap-2 p-2 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg text-xs text-emerald-700 dark:text-emerald-300">
+                  <Trophy className="h-3.5 w-3.5" /> First Lecture Complete
                 </div>
               )}
               {quizAttempts.length >= 1 && (
-                <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <Brain className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm text-blue-700 dark:text-blue-300">Quiz Taker</span>
+                <div className="flex items-center gap-2 p-2 bg-primary/5 rounded-lg text-xs text-primary">
+                  <Brain className="h-3.5 w-3.5" /> Quiz Taker
                 </div>
               )}
-              {averageScore >= 80 && (
-                <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                  <Trophy className="h-4 w-4 text-yellow-600" />
-                  <span className="text-sm text-yellow-700 dark:text-yellow-300">High Achiever</span>
+              {avgScore >= 80 && (
+                <div className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg text-xs text-amber-700 dark:text-amber-300">
+                  <Trophy className="h-3.5 w-3.5" /> High Achiever
                 </div>
               )}
               {completedLectures === 0 && quizAttempts.length === 0 && (
-                <p className="text-gray-600 dark:text-gray-400 text-sm text-center py-2">
-                  Complete lectures and take quizzes to earn achievements!
-                </p>
+                <p className="text-xs text-muted-foreground text-center py-2">Complete lectures and quizzes to earn achievements</p>
               )}
             </CardContent>
           </Card>

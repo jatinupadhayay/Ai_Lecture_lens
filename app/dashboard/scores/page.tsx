@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useRouter } from "next/navigation"
-import { Trophy, Calendar, Brain, TrendingUp, RotateCcw, Eye } from "lucide-react"
+import { Trophy, Brain, TrendingUp, Target, RotateCcw } from "lucide-react"
 
 export default function ScoresPage() {
   const router = useRouter()
@@ -15,94 +15,53 @@ export default function ScoresPage() {
   if (!user) return null
 
   const quizAttempts = getUserQuizAttempts().sort(
-    (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+    (a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
   )
 
-  const getQuizTitle = (quizId: string) => {
-    const quiz = quizzes.find((q) => q.id === quizId)
-    return quiz?.title || "Unknown Quiz"
-  }
-
+  const getQuizTitle = (quizId: string) => quizzes.find((q: any) => q.id === quizId)?.title || "Quiz"
   const getLectureTitle = (quizId: string) => {
-    const quiz = quizzes.find((q) => q.id === quizId)
-    if (!quiz) return "Unknown Lecture"
-    const lecture = lectures.find((l) => l.id === quiz.lectureId)
-    return lecture?.title || "Unknown Lecture"
+    const quiz = quizzes.find((q: any) => q.id === quizId)
+    if (!quiz) return "Unknown"
+    return lectures.find((l: any) => l._id === quiz.lectureId || l.id === quiz.lectureId)?.title || "Unknown"
   }
 
-  const averageScore =
-    user.scores.length > 0 ? Math.round(user.scores.reduce((a, b) => a + b, 0) / user.scores.length) : 0
-  const bestScore = user.scores.length > 0 ? Math.max(...user.scores) : 0
-  const passedQuizzes = quizAttempts.filter((attempt) => attempt.score >= 70).length
-  const totalQuizzes = quizAttempts.length
+  const scores = user.scores || []
+  const avgScore = scores.length > 0 ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0
+  const bestScore = scores.length > 0 ? Math.max(...scores) : 0
+  const passedCount = quizAttempts.filter((a: any) => a.score >= 70).length
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Quiz Scores</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">View all your quiz attempts and performance history</p>
+        <h1 className="text-2xl font-bold tracking-tight">Scores</h1>
+        <p className="text-muted-foreground text-sm mt-1">Your quiz performance history</p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Trophy className="h-4 w-4 text-yellow-600" />
-              Best Score
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{bestScore}%</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-blue-600" />
-              Average Score
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{averageScore}%</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Brain className="h-4 w-4 text-green-600" />
-              Passed Quizzes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{passedQuizzes}</div>
-            <p className="text-xs text-muted-foreground">out of {totalQuizzes}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-purple-600" />
-              Success Rate
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalQuizzes > 0 ? Math.round((passedQuizzes / totalQuizzes) * 100) : 0}%
-            </div>
-          </CardContent>
-        </Card>
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Best Score", value: `${bestScore}%`, icon: Trophy, color: "text-amber-500" },
+          { label: "Average", value: `${avgScore}%`, icon: TrendingUp, color: "text-primary" },
+          { label: "Passed", value: passedCount, icon: Target, color: "text-emerald-500" },
+          { label: "Success Rate", value: `${quizAttempts.length > 0 ? Math.round((passedCount / quizAttempts.length) * 100) : 0}%`, icon: Brain, color: "text-violet-500" },
+        ].map((s) => (
+          <Card key={s.label}>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-1">
+                <s.icon className={`h-4 w-4 ${s.color}`} />
+                <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
+              </div>
+              <p className="text-2xl font-bold">{s.value}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* Scores Table */}
+      {/* Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>All Quiz Attempts</CardTitle>
-          <CardDescription>Complete history of your quiz performance</CardDescription>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">All Attempts</CardTitle>
+          <CardDescription className="text-xs">Complete quiz performance history</CardDescription>
         </CardHeader>
         <CardContent>
           {quizAttempts.length > 0 ? (
@@ -114,49 +73,35 @@ export default function ScoresPage() {
                   <TableHead>Score</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="w-20"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {quizAttempts.map((attempt) => (
+                {quizAttempts.map((attempt: any) => (
                   <TableRow key={attempt.id}>
-                    <TableCell className="font-medium">{getQuizTitle(attempt.quizId)}</TableCell>
-                    <TableCell className="text-gray-600 dark:text-gray-400">
-                      {getLectureTitle(attempt.quizId)}
+                    <TableCell className="font-medium text-sm">{getQuizTitle(attempt.quizId)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{getLectureTitle(attempt.quizId)}</TableCell>
+                    <TableCell>
+                      <span className="font-medium text-sm">{attempt.score}%</span>
+                      {attempt.score >= 90 && <Trophy className="inline ml-1.5 h-3.5 w-3.5 text-amber-500" />}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{attempt.score}%</span>
-                        {attempt.score >= 90 && <Trophy className="h-4 w-4 text-yellow-500" />}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={attempt.score >= 70 ? "default" : "secondary"}>
+                      <Badge variant={attempt.score >= 70 ? "default" : "secondary"} className="text-xs">
                         {attempt.score >= 70 ? "Passed" : "Failed"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-600 dark:text-gray-400">
+                    <TableCell className="text-sm text-muted-foreground">
                       {new Date(attempt.completedAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => router.push(`/dashboard/quizzes/${attempt.quizId}`)}
-                        >
-                          <Eye className="h-3 w-3 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => router.push(`/dashboard/quizzes/${attempt.quizId}`)}
-                        >
-                          <RotateCcw className="h-3 w-3 mr-1" />
-                          Retake
-                        </Button>
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => router.push(`/dashboard/quizzes/${attempt.quizId}`)}
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1" /> Retake
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -164,12 +109,11 @@ export default function ScoresPage() {
             </Table>
           ) : (
             <div className="text-center py-12">
-              <Brain className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <CardTitle className="text-xl mb-2">No quiz scores yet</CardTitle>
-              <CardDescription className="mb-4">Take your first quiz to see your scores here</CardDescription>
-              <Button onClick={() => router.push("/dashboard/quizzes")}>
-                <Brain className="mr-2 h-4 w-4" />
-                Browse Quizzes
+              <Brain className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+              <p className="font-semibold mb-1">No scores yet</p>
+              <p className="text-sm text-muted-foreground mb-4">Take a quiz to see your scores</p>
+              <Button size="sm" variant="outline" onClick={() => router.push("/dashboard/quizzes")}>
+                <Brain className="mr-2 h-3.5 w-3.5" /> Browse Quizzes
               </Button>
             </div>
           )}

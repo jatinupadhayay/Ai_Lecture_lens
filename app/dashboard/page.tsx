@@ -1,209 +1,173 @@
 "use client"
 
+import { useEffect } from "react"
 import { useAppStore } from "@/lib/store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
-import { BookOpen, Brain, Trophy, TrendingUp, Clock, Target, PlayCircle, FileText } from "lucide-react"
+import { BookOpen, Brain, Trophy, TrendingUp, Clock, PlayCircle, FileText, Plus } from "lucide-react"
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { user, lectures, getUserQuizAttempts } = useAppStore()
+  const { user, lectures, fetchLectures, getUserQuizAttempts } = useAppStore()
+
+  useEffect(() => {
+    fetchLectures()
+  }, [fetchLectures])
 
   if (!user) return null
 
   const quizAttempts = getUserQuizAttempts()
-  const completedLectures = lectures.filter((lecture) => lecture.completionStatus === 100).length
+  const completedLectures = lectures.filter((l: any) => l.status === "completed").length
   const totalLectures = lectures.length
   const averageScore =
-    user.scores.length > 0 ? Math.round(user.scores.reduce((a, b) => a + b, 0) / user.scores.length) : 0
+    user.scores?.length > 0 ? Math.round(user.scores.reduce((a: number, b: number) => a + b, 0) / user.scores.length) : 0
 
-  const recentLectures = lectures.slice(0, 3)
-  const recentQuizzes = quizAttempts.slice(-3)
+  const recentLectures = [...lectures]
+    .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 4)
 
   return (
-    <div className="space-y-6">
-      {/* Welcome Section */}
+    <div className="space-y-8">
+      {/* Welcome */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Welcome back, {user.name}!</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Here's your learning progress overview</p>
+          <h1 className="text-2xl font-bold tracking-tight">Welcome back, {user.name}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Here's an overview of your learning progress</p>
         </div>
         <Button onClick={() => router.push("/dashboard/lectures")}>
-          <BookOpen className="mr-2 h-4 w-4" />
-          Add New Lecture
+          <Plus className="mr-2 h-4 w-4" />
+          New Lecture
         </Button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Lectures</CardTitle>
-            <BookOpen className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalLectures}</div>
-            <p className="text-xs text-muted-foreground">{completedLectures} completed</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Score</CardTitle>
-            <Trophy className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{averageScore}%</div>
-            <p className="text-xs text-muted-foreground">From {user.scores.length} quizzes</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Attendance</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{user.attendance}%</div>
-            <p className="text-xs text-muted-foreground">This semester</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Quizzes Taken</CardTitle>
-            <Brain className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{quizAttempts.length}</div>
-            <p className="text-xs text-muted-foreground">This month</p>
-          </CardContent>
-        </Card>
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Lectures", value: totalLectures, sub: `${completedLectures} completed`, icon: BookOpen, color: "text-primary" },
+          { label: "Avg Score", value: `${averageScore}%`, sub: `${user.scores?.length || 0} quizzes`, icon: Trophy, color: "text-amber-500" },
+          { label: "Attendance", value: `${user.attendance || 0}%`, sub: "This semester", icon: TrendingUp, color: "text-emerald-500" },
+          { label: "Quiz Attempts", value: quizAttempts.length, sub: "Total taken", icon: Brain, color: "text-violet-500" },
+        ].map((stat) => (
+          <Card key={stat.label}>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{stat.label}</span>
+                <stat.icon className={`h-4 w-4 ${stat.color}`} />
+              </div>
+              <div className="text-2xl font-bold">{stat.value}</div>
+              <p className="text-xs text-muted-foreground mt-0.5">{stat.sub}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* Progress Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-5 w-5 text-blue-600" />
-              Learning Progress
-            </CardTitle>
-            <CardDescription>Your overall course completion</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex justify-between text-sm mb-2">
-                <span>Course Completion</span>
-                <span>{Math.round((completedLectures / totalLectures) * 100)}%</span>
+      {/* Recent lectures + activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent lectures */}
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Recent Lectures</CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/lectures")}>
+                  View all
+                </Button>
               </div>
-              <Progress value={(completedLectures / totalLectures) * 100} className="h-2" />
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-2">
-                <span>Quiz Performance</span>
-                <span>{averageScore}%</span>
-              </div>
-              <Progress value={averageScore} className="h-2" />
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-2">
-                <span>Attendance Rate</span>
-                <span>{user.attendance}%</span>
-              </div>
-              <Progress value={user.attendance} className="h-2" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              {recentLectures.length > 0 ? (
+                <div className="space-y-3">
+                  {recentLectures.map((lecture: any) => (
+                    <div
+                      key={lecture._id}
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 transition-colors cursor-pointer"
+                      onClick={() => router.push(`/dashboard/lectures/${lecture._id}`)}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                          <PlayCircle className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{lecture.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(lecture.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <Badge
+                          variant={lecture.status === "completed" ? "default" : "secondary"}
+                          className="text-xs"
+                        >
+                          {lecture.status}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/dashboard/summaries?lecture=${lecture._id}`)
+                          }}
+                        >
+                          <FileText className="mr-1 h-3 w-3" />
+                          Summary
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <BookOpen className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground mb-3">No lectures yet</p>
+                  <Button size="sm" onClick={() => router.push("/dashboard/lectures")}>
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    Add your first lecture
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
+        {/* Recent activity */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-green-600" />
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
               Recent Activity
             </CardTitle>
-            <CardDescription>Your latest learning activities</CardDescription>
+            <CardDescription className="text-xs">Latest quiz attempts</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentQuizzes.length > 0 ? (
-                recentQuizzes.map((attempt) => (
-                  <div key={attempt.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Brain className="h-4 w-4 text-purple-600" />
+            {quizAttempts.length > 0 ? (
+              <div className="space-y-3">
+                {quizAttempts.slice(-5).reverse().map((attempt: any, i: number) => (
+                  <div key={attempt.id || i} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <Brain className="h-4 w-4 text-violet-500" />
                       <div>
-                        <p className="text-sm font-medium">Quiz Completed</p>
+                        <p className="text-sm font-medium">Quiz completed</p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(attempt.completedAt).toLocaleDateString()}
+                          {attempt.completedAt ? new Date(attempt.completedAt).toLocaleDateString() : "Recently"}
                         </p>
                       </div>
                     </div>
-                    <Badge variant={attempt.score >= 70 ? "default" : "secondary"}>{attempt.score}%</Badge>
+                    <Badge variant={attempt.score >= 70 ? "default" : "secondary"} className="text-xs">
+                      {attempt.score}%
+                    </Badge>
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">No recent quiz attempts</p>
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-6">No quiz attempts yet</p>
+            )}
           </CardContent>
         </Card>
       </div>
-
-      {/* Recent Lectures */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <PlayCircle className="h-5 w-5 text-blue-600" />
-            Recent Lectures
-          </CardTitle>
-          <CardDescription>Continue where you left off</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {recentLectures.map((lecture) => (
-              <Card key={lecture.id} className="cursor-pointer hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{lecture.title}</CardTitle>
-                  <CardDescription className="text-xs">
-                    Uploaded {new Date(lecture.uploadedAt).toLocaleDateString()}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Progress</span>
-                      <span>{lecture.completionStatus}%</span>
-                    </div>
-                    <Progress value={lecture.completionStatus} className="h-1" />
-                    <div className="flex gap-2 mt-3">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 bg-transparent"
-                        onClick={() => router.push(`/dashboard/lectures/${lecture.id}`)}
-                      >
-                        <PlayCircle className="mr-1 h-3 w-3" />
-                        Watch
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => router.push(`/dashboard/summaries?lecture=${lecture.id}`)}
-                      >
-                        <FileText className="mr-1 h-3 w-3" />
-                        Summary
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }
