@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 
 const authRoutes = require('./routes/auth');
@@ -14,27 +15,51 @@ const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
 
-// ✅ Middleware
+// ✅ CORS — lock to FRONTEND_URL in production
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(o => o.trim())
+  : ['http://localhost:3000'];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true
+  origin: process.env.NODE_ENV === 'production'
+    ? allowedOrigins
+    : true, // allow all in dev
+  credentials: true,
 }));
+
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Serve uploaded files (ensures /uploads/ URLs work)
+// ✅ Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // stricter for auth endpoints
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many auth attempts, please try again later.' },
+});
+
+// ✅ Serve uploaded files
 const __dirnameRoot = path.resolve();
 app.use('/uploads', express.static(path.join(__dirnameRoot, 'uploads')));
 
-// ✅ Health check routes
-app.get('/', (req, res) => res.send('🚀 Smart Lecture AI Backend Running'));
+// ✅ Health check
+app.get('/', (req, res) => res.send('Lecture Lens API Running'));
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// ✅ API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/lectures', lectureRoutes);
-app.use('/api/quizzes', quizRoutes);
+// ✅ API Routes with rate limiting
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/lectures', apiLimiter, lectureRoutes);
+app.use('/api/quizzes', apiLimiter, quizRoutes);
 
 // ✅ Error handler
 app.use(errorHandler);

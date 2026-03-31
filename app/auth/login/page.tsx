@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, BookOpen } from "lucide-react"
+import { Loader2, GraduationCap } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -18,12 +19,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
-  // 👇 Redirect automatically once logged in
   useEffect(() => {
-    if (user) {
-      console.log("✅ User detected, redirecting to dashboard...")
-      router.push("/dashboard")
-    }
+    if (user) router.push("/dashboard")
   }, [user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,17 +29,13 @@ export default function LoginPage() {
     setError("")
 
     try {
-      console.log("Sending login request...")
       const success = await login(formData.email, formData.password)
-      console.log("🟢 Login success:", success)
-
-      if (!success) {
+      if (success) {
+        toast.success("Welcome back!")
+      } else {
         setError("Invalid email or password.")
       }
-      // ❌ Do NOT put router.push() here directly — 
-      // it may fire before Zustand updates user state
-    } catch (err) {
-      console.error("Login error:", err)
+    } catch {
       setError("An error occurred. Please try again.")
     } finally {
       setIsLoading(false)
@@ -50,78 +43,93 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <BookOpen className="h-12 w-12 text-blue-600" />
+    <div className="min-h-screen flex">
+      {/* Left panel - branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-primary relative overflow-hidden items-center justify-center">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.08),transparent_70%)]" />
+        <div className="relative z-10 max-w-md px-12 text-primary-foreground">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="h-11 w-11 rounded-xl bg-white/15 flex items-center justify-center backdrop-blur-sm">
+              <GraduationCap className="h-6 w-6" />
+            </div>
+            <span className="text-2xl font-semibold tracking-tight">Lecture Lens</span>
           </div>
-          <CardTitle className="text-2xl">Welcome Back</CardTitle>
-          <CardDescription>Sign in to your Smart Lecture AI Lens account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="Enter your email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="Enter your password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
-                disabled={isLoading}
-              />
-            </div>
+          <h2 className="text-3xl font-bold leading-tight mb-4">
+            Transform lectures into interactive study material
+          </h2>
+          <p className="text-white/70 leading-relaxed">
+            AI-powered transcription, smart summaries, and auto-generated quizzes
+            to help you learn faster and retain more.
+          </p>
+        </div>
+      </div>
 
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+      {/* Right panel - form */}
+      <div className="flex-1 flex items-center justify-center p-6 bg-background">
+        <Card className="w-full max-w-sm border-0 shadow-none lg:border lg:shadow-sm">
+          <CardHeader className="text-center pb-2">
+            <div className="flex justify-center mb-3 lg:hidden">
+              <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
+                <GraduationCap className="h-5 w-5 text-primary-foreground" />
+              </div>
+            </div>
+            <CardTitle className="text-xl">Welcome back</CardTitle>
+            <CardDescription>Sign in to your account</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                "Sign In"
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               )}
-            </Button>
-          </form>
 
-          <div className="mt-6 text-center text-sm">
-            Don’t have an account?{" "}
-            <Link href="/auth/signup" className="text-blue-600 hover:underline">
-              Sign up
-            </Link>
-          </div>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  "Sign in"
+                )}
+              </Button>
+            </form>
 
-          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <p className="text-xs text-blue-700 dark:text-blue-300 text-center">
-              <strong>Demo Credentials:</strong><br />
-              Email: jatin@example.com<br />
-              Password: password
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              Don't have an account?{" "}
+              <Link href="/auth/signup" className="text-primary font-medium hover:underline">
+                Sign up
+              </Link>
             </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

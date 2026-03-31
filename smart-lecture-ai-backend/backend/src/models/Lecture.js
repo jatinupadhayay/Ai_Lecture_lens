@@ -55,11 +55,19 @@ const lectureSchema = new mongoose.Schema(
     frames: [frameSchema],
     summary: summarySchema,
 
-    // ✅ Quiz generated from lecture
+    // ✅ Quiz generated from lecture (raw text lines)
     quiz: {
-      questions: [{ type: String }],
-      answers: [{ type: String }],
+      local: [{ type: String }],
+      ai: [{ type: String }],
+      merged: [{ type: String }],
     },
+
+    // ✅ Structured quiz (from OpenAI JSON output)
+    quizStructured: [{
+      question: { type: String },
+      options: [{ type: String }],
+      correctAnswer: { type: Number, default: 0 },
+    }],
 
     createdAt: { type: Date, default: Date.now },
   },

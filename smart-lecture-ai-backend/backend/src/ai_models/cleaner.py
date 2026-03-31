@@ -1,4 +1,6 @@
 import re
+import sys
+import os
 import spacy
 from pathlib import Path
 
@@ -118,3 +120,20 @@ def clean_transcript_file(input_path: str, output_path: str):
     Path(output_path).write_text(cleaned, encoding="utf-8")
     print(f"✅ Cleaned transcript saved → {output_path}")
     return cleaned
+
+
+# -------------------- CLI --------------------
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("")
+        sys.exit(0)
+
+    input_text = sys.argv[1]
+
+    # If it looks like a file path, read it
+    if os.path.exists(input_text):
+        with open(input_text, "r", encoding="utf-8") as f:
+            input_text = f.read()
+
+    result = clean_text(input_text)
+    print(result)

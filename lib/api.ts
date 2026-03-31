@@ -11,13 +11,21 @@ export const apiService = {
   },
 
   async signup(name: string, email: string, password: string) {
-    const res = await axios.post(`${API_URL}/auth/signup`, { name, email, password })
+    const res = await axios.post(`${API_URL}/auth/register`, { name, email, password })
     return res.data
   },
 
   async getProfile() {
     const token = localStorage.getItem("token")
     const res = await axios.get(`${API_URL}/auth/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.data
+  },
+
+  async updateProfile(data: { name?: string; email?: string }) {
+    const token = localStorage.getItem("token")
+    const res = await axios.patch(`${API_URL}/auth/profile`, data, {
       headers: { Authorization: `Bearer ${token}` },
     })
     return res.data
@@ -88,7 +96,7 @@ export const apiService = {
   // 🔹 QUIZZES
   async getLectureQuizzes(lectureId: string) {
     const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/quizzes/${lectureId}`, {
+    const res = await axios.get(`${API_URL}/quizzes/lecture/${lectureId}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     return res.data
@@ -97,8 +105,8 @@ export const apiService = {
   async submitQuiz(quizId: string, answers: number[]) {
     const token = localStorage.getItem("token")
     const res = await axios.post(
-      `${API_URL}/quizzes/${quizId}/submit`,
-      { answers },
+      `${API_URL}/quizzes/attempt`,
+      { quizId, answers },
       { headers: { Authorization: `Bearer ${token}` } }
     )
     return res.data

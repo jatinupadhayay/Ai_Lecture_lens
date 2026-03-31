@@ -1,5 +1,6 @@
 require("dotenv").config();
 const path = require("path");
+const fs = require("fs");
 const { Worker } = require("bullmq");
 const { connection } = require("./queues");
 const connectDB = require("./config/db");
@@ -68,13 +69,31 @@ async function run() {
       // 4️⃣ Quiz generation
       console.log(`[Worker] 🎯 Generating quiz...`);
       const quizRes = await aiService.generateQuiz(fullText, 7);
-lecture.quiz = {
-  local: quizRes.localQuiz || [],
-  ai: quizRes.aiQuiz || [],
-  merged: quizRes.mergedQuiz || [],
-};
+      lecture.quiz = {
+        local: quizRes.localQuiz || [],
+        ai: quizRes.aiQuiz || [],
+        merged: quizRes.mergedQuiz || [],
+      };
+      // Store structured quiz data if available from OpenAI
+      if (quizRes.aiQuizStructured && quizRes.aiQuizStructured.length > 0) {
+        lecture.quizStructured = quizRes.aiQuizStructured;
+      }
       lecture.status = "completed";
       await lecture.save();
+
+      // 5️⃣ Cleanup temp files (downloaded YT videos, etc.)
+      const tmpDir = path.join(__dirname, "../../tmp");
+      try {
+        if (fs.existsSync(tmpDir)) {
+          const tmpFiles = fs.readdirSync(tmpDir);
+          for (const f of tmpFiles) {
+            fs.unlinkSync(path.join(tmpDir, f));
+          }
+          console.log(`[Worker] 🧹 Cleaned ${tmpFiles.length} temp files.`);
+        }
+      } catch (cleanErr) {
+        console.warn(`[Worker] ⚠️ Temp cleanup failed:`, cleanErr.message);
+      }
 
       console.log(`✅ [Worker] Lecture ${lectureId} completed successfully.`);
       return { success: true };
@@ -86,9 +105,18 @@ lecture.quiz = {
     console.log(`✅ Job ${job.id} completed successfully.`)
   );
 
-  worker.on("failed", (job, err) =>
-    console.error(`❌ Job ${job?.id} failed: ${err.message}`)
-  );
+  worker.on("failed", async (job, err) => {
+    console.error(`❌ Job ${job?.id} failed: ${err.message}`);
+    // Mark lecture as failed
+    try {
+      const lectureId = job?.data?.lectureId;
+      if (lectureId) {
+        await Lecture.findByIdAndUpdate(lectureId, { status: "failed" });
+      }
+    } catch (updateErr) {
+      console.error("Failed to update lecture status:", updateErr.message);
+    }
+  });
 }
 
 run().catch((err) => {

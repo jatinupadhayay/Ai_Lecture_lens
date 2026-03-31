@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { useTheme } from "next-themes"
 import { useAppStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -12,11 +13,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { BookOpen, LogOut, User } from "lucide-react"
+import { LogOut, User, Moon, Sun, GraduationCap } from "lucide-react"
 
 export function Navbar() {
   const router = useRouter()
   const { user, logout } = useAppStore()
+  const { theme, setTheme } = useTheme()
 
   const handleLogout = () => {
     logout()
@@ -26,18 +28,33 @@ export function Navbar() {
   if (!user) return null
 
   return (
-    <nav className="border-b bg-white dark:bg-gray-900 px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-8 w-8 text-blue-600" />
-          <span className="text-xl font-bold text-gray-900 dark:text-white">Smart Lecture AI</span>
+    <nav className="h-14 border-b bg-card/80 backdrop-blur-sm px-6 flex items-center justify-between shrink-0">
+      <div className="flex items-center gap-2.5">
+        <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+          <GraduationCap className="h-4.5 w-4.5 text-primary-foreground" />
         </div>
+        <span className="text-base font-semibold tracking-tight">Lecture Lens</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        >
+          <Sun className="h-4 w-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+          <span className="sr-only">Toggle theme</span>
+        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-              <Avatar className="h-10 w-10">
-                <AvatarFallback className="bg-blue-600 text-white">{user.name.charAt(0).toUpperCase()}</AvatarFallback>
+            <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
+                  {user.name?.charAt(0).toUpperCase()}
+                </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
@@ -51,12 +68,12 @@ export function Navbar() {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/dashboard/profile")}>
               <User className="mr-2 h-4 w-4" />
-              <span>Profile</span>
+              Profile
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
+              Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

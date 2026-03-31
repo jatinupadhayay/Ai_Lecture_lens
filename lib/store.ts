@@ -56,6 +56,19 @@ export const useAppStore = create(
         }
       },
 
+      // 🔹 UPDATE PROFILE
+      async updateProfile(data: { name?: string; email?: string }) {
+        try {
+          const res = await apiService.updateProfile(data)
+          const updatedUser = res.user
+          set({ user: updatedUser })
+          return true
+        } catch (err) {
+          console.error("Update profile failed:", err)
+          return false
+        }
+      },
+
       // 🔹 LOGOUT
       logout() {
         localStorage.removeItem("token")
@@ -146,7 +159,7 @@ export const useAppStore = create(
         }
       },
 
-      async submitQuiz(quizId: string, answers: number[]) {
+      async submitQuizAttempt(quizId: string, answers: number[]) {
         try {
           return await apiService.submitQuiz(quizId, answers)
         } catch (err) {

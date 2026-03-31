@@ -1,41 +1,45 @@
 import re
 import os
-import cv2
+import sys
+import json
 import nltk
-import streamlit as st
 from transformers import pipeline
 from nltk.tokenize import sent_tokenize
 
-# Download sentence tokenizer silently
 nltk.download("punkt", quiet=True)
+nltk.download("punkt_tab", quiet=True)
 
-# ✅ Models
+# -------------------- Models --------------------
 SUMMARIZER_MODEL = "philschmid/bart-large-cnn-samsum"
-CLEANER_MODEL = "facebook/bart-large-cnn"  # public and reliable
+CLEANER_MODEL = "facebook/bart-large-cnn"
 
-# -------------------- Cached Model Loaders --------------------
-@st.cache_resource(show_spinner=False)
-def load_summarizer_model():
-    """Load summarization model once and cache it."""
-    return pipeline("summarization", model=SUMMARIZER_MODEL, device=-1)
+_summarizer = None
+_cleaner = None
 
-@st.cache_resource(show_spinner=False)
-def load_cleaner_model():
-    """Load general-purpose cleaner model once and cache it."""
-    return pipeline("summarization", model=CLEANER_MODEL, device=-1)
 
-# -------------------- Text Preprocessing --------------------
+def get_summarizer():
+    global _summarizer
+    if _summarizer is None:
+        print("[summarize] Loading BART summarizer...", file=sys.stderr)
+        _summarizer = pipeline("summarization", model=SUMMARIZER_MODEL, device=-1)
+    return _summarizer
+
+
+def get_cleaner():
+    global _cleaner
+    if _cleaner is None:
+        print("[summarize] Loading BART cleaner...", file=sys.stderr)
+        _cleaner = pipeline("summarization", model=CLEANER_MODEL, device=-1)
+    return _cleaner
+
+
+# -------------------- Preprocessing --------------------
 def preprocess_transcript(text: str) -> str:
-    """Clean messy transcript text before summarization."""
-    # Remove timestamps like [00:12–00:34s] or 0.00–10.23s
+    """Clean messy transcript before summarization."""
     text = re.sub(r"\[?\d+(\.\d+)?[-–]\d+(\.\d+)?s\]?", " ", text)
     text = re.sub(r"\d+(\.\d+)?s", " ", text)
-
-    # Remove intros, outros, and irrelevant instructions
     text = re.sub(r"\b(hello everyone|welcome|thank you|subscribe|like and share)\b.*", " ", text, flags=re.I)
-    text = re.sub(r"\b(activity\s*time|choose an option|comment below|watch the video|follow us|quiz)\b", " ", text, flags=re.I)
 
-    # Deduplicate short/redundant lines
     lines = [l.strip() for l in text.splitlines() if len(l.strip().split()) > 3]
     seen, filtered = set(), []
     for line in lines:
@@ -46,20 +50,10 @@ def preprocess_transcript(text: str) -> str:
     text = " ".join(filtered)
     return re.sub(r"\s+", " ", text).strip()
 
-# -------------------- Video Duration Helper --------------------
-def get_duration_minutes(video_path: str) -> float:
-    """Estimate duration in minutes for summary proportion."""
-    if not video_path or not os.path.exists(video_path):
-        return 10
-    cap = cv2.VideoCapture(video_path)
-    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    cap.release()
-    return frames / fps / 60 if fps > 0 else 10
 
-# -------------------- Chunking Helper --------------------
+# -------------------- Chunking --------------------
 def chunk_sentences(text: str, max_chars=2000):
-    """Split transcript into coherent chunks for summarization."""
+    """Split text into chunks for summarization."""
     sentences = sent_tokenize(text)
     chunks, current = [], ""
     for sent in sentences:
@@ -72,54 +66,66 @@ def chunk_sentences(text: str, max_chars=2000):
         chunks.append(current.strip())
     return chunks
 
+
 # -------------------- Main Summarization --------------------
-def summarize_text(text: str, video_path: str = None, use_ai_cleaner: bool = True) -> str:
-    """
-    1️⃣ Clean transcript
-    2️⃣ Optionally refine text using AI cleaner
-    3️⃣ Summarize proportionally to video length
-    """
+def summarize_text(text: str, use_ai_cleaner: bool = False) -> str:
+    """Summarize transcript text using BART."""
     text = preprocess_transcript(text)
-    duration = get_duration_minutes(video_path)
 
-    # Adjust paragraph count
-    if duration < 8:
-        para_count = 2
-    elif duration < 15:
-        para_count = 3
-    else:
-        para_count = 4
+    if not text or len(text.split()) < 20:
+        return text or "Insufficient text to summarize."
 
-    # Step 1: AI Cleaning (Optional)
-    if use_ai_cleaner:
-        st.info("🧹 Cleaning transcript with AI...")
-        cleaner = load_cleaner_model()
+    # Optional AI cleaning
+    if use_ai_cleaner and len(text.split()) > 80:
         try:
-            cleaned = cleaner(text, max_length=1024, min_length=100, do_sample=False, truncation=True)
+            cleaner = get_cleaner()
+            cleaned = cleaner(text[:4096], max_length=1024, min_length=100, do_sample=False, truncation=True)
             text = cleaned[0]["summary_text"].strip()
         except Exception as e:
-            st.warning(f"⚠️ AI cleaning failed: {e}")
+            print(f"[summarize] AI cleaning failed: {e}", file=sys.stderr)
 
-    # Step 2: Summarization
-    st.info("🧠 Generating structured summary...")
-    summarizer = load_summarizer_model()
+    # Summarize
+    summarizer = get_summarizer()
     chunks = chunk_sentences(text)
     summaries = []
 
     for chunk in chunks:
+        if len(chunk.split()) < 10:
+            continue
         try:
-            result = summarizer(chunk, max_length=512, min_length=150, truncation=True, do_sample=False)
+            result = summarizer(chunk, max_length=512, min_length=50, truncation=True, do_sample=False)
             summaries.append(result[0]["summary_text"])
         except Exception as e:
-            st.warning(f"⚠️ Skipped one chunk due to: {e}")
+            print(f"[summarize] Skipped chunk: {e}", file=sys.stderr)
 
-    merged_summary = " ".join(summaries)
+    if not summaries:
+        return text[:500]
 
-    # Step 3: Paragraph Structuring
-    sentences = sent_tokenize(merged_summary)
+    merged = " ".join(summaries)
+
+    # Structure into paragraphs
+    sentences = sent_tokenize(merged)
+    para_count = max(2, min(4, len(sentences) // 3))
     per_para = max(1, len(sentences) // para_count)
     structured = "\n\n".join(
         [" ".join(sentences[i:i + per_para]) for i in range(0, len(sentences), per_para)]
     )
 
     return structured.strip()
+
+
+# -------------------- CLI --------------------
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("")
+        sys.exit(0)
+
+    input_text = sys.argv[1]
+
+    # If it looks like a file path, read it
+    if os.path.exists(input_text):
+        with open(input_text, "r", encoding="utf-8") as f:
+            input_text = f.read()
+
+    result = summarize_text(input_text)
+    print(result)

@@ -18,12 +18,11 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: "Email already registered." });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
+    // Password is hashed by the User model's pre-save hook
     const user = await User.create({
       name,
       email,
-      password: hashedPassword,
+      password,
       role: role || "student",
     });
 
@@ -94,4 +93,30 @@ const getProfile = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, loginUser, getProfile };
+// UPDATE PROFILE
+const updateProfile = async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    const { name, email } = req.body;
+
+    const updates = {};
+    if (name) updates.name = name;
+    if (email) updates.email = email;
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, {
+      new: true,
+      runValidators: true,
+    }).select("-password");
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ message: "Profile updated", user });
+  } catch (err) {
+    console.error("Update profile error:", err);
+    if (err.code === 11000) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+module.exports = { registerUser, loginUser, getProfile, updateProfile };

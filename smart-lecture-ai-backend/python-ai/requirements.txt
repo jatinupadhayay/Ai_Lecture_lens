@@ -9,3 +9,5 @@ imagehash
 pytesseract
 transformers
 torch
+nltk
+spacy

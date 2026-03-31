@@ -2,51 +2,53 @@ import os
 import sys
 import json
 import wave
-from vosk import Model, KaldiRecognizer
-from moviepy.editor import VideoFileClip
 from pathlib import Path
-from pydub import AudioSegment
 
 # ---------------- CONFIG ----------------
-# Get model path from environment variable or fallback
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_PATH = os.getenv(
     "VOSK_MODEL_PATH",
-    r"D:\ai pin\smart-lecture-ai\smart-lecture-ai-backend\backend\models\vosk-model-small-en-us-0.15"
+    os.path.join(BASE_DIR, "models", "vosk-model-small-en-us-0.15")
 )
 
-# Ensure model exists
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(
-        f"❌ Vosk model not found at {MODEL_PATH}. Download from:\n"
-        "https://alphacephei.com/vosk/models"
-    )
 
 # ---------------- AUDIO EXTRACTION ----------------
-def extract_audio(video_path, output_audio="data/processed/audio.wav"):
-    """
-    Extracts audio from a video file and saves as 16kHz mono WAV for Vosk.
-    """
-    Path("data/processed").mkdir(parents=True, exist_ok=True)
+def extract_audio(video_path, output_audio=None):
+    """Extract audio from video as 16kHz mono WAV for Vosk."""
+    if output_audio is None:
+        tmp_dir = os.path.join(BASE_DIR, "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        output_audio = os.path.join(tmp_dir, "audio.wav")
 
+    from moviepy.editor import VideoFileClip
     clip = VideoFileClip(video_path)
     clip.audio.write_audiofile(output_audio, fps=16000, nbytes=2, codec="pcm_s16le", logger=None)
     clip.close()
     return output_audio
 
+
 # ---------------- SPEECH TO TEXT ----------------
-def transcribe_audio(audio_path, model_path=MODEL_PATH):
-    """
-    Transcribes audio with timestamps using Vosk (offline).
-    Returns a list of dictionaries with start, end, and text.
-    """
+def transcribe_audio(audio_path, model_path=None):
+    """Transcribe audio with timestamps using Vosk (offline)."""
+    from vosk import Model, KaldiRecognizer
+
+    if model_path is None:
+        model_path = MODEL_PATH
+
+    if not os.path.exists(model_path):
+        print(json.dumps({"error": f"Vosk model not found at {model_path}"}), file=sys.stderr)
+        return []
+
+    # Ensure correct audio format
     wf = wave.open(audio_path, "rb")
-    # Convert audio to correct format if needed
     if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 16000:
+        wf.close()
+        from pydub import AudioSegment
         sound = AudioSegment.from_file(audio_path)
-        sound = sound.set_channels(1).set_frame_rate(16000)
-        audio_path = "data/processed/audio_16k.wav"
-        sound.export(audio_path, format="wav")
-        wf = wave.open(audio_path, "rb")
+        sound = sound.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+        converted_path = audio_path.replace(".wav", "_16k.wav")
+        sound.export(converted_path, format="wav")
+        wf = wave.open(converted_path, "rb")
 
     model = Model(model_path)
     rec = KaldiRecognizer(model, wf.getframerate())
@@ -65,3 +67,36 @@ def transcribe_audio(audio_path, model_path=MODEL_PATH):
                 start = res["result"][0]["start"]
                 end = res["result"][-1]["end"]
                 text = res["text"].strip()
+                if text:
+                    results.append({"start": round(start, 2), "end": round(end, 2), "text": text})
+
+    # Get final partial result
+    final = json.loads(rec.FinalResult())
+    if "result" in final and final.get("text", "").strip():
+        start = final["result"][0]["start"]
+        end = final["result"][-1]["end"]
+        results.append({"start": round(start, 2), "end": round(end, 2), "text": final["text"].strip()})
+
+    wf.close()
+    return results
+
+
+# ---------------- CLI ENTRY POINT ----------------
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print(json.dumps([]))
+        sys.exit(0)
+
+    input_path = sys.argv[1]
+
+    # Determine if input is video or audio
+    ext = os.path.splitext(input_path)[1].lower()
+    video_exts = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv"}
+
+    if ext in video_exts:
+        audio_path = extract_audio(input_path)
+    else:
+        audio_path = input_path
+
+    transcript = transcribe_audio(audio_path)
+    print(json.dumps(transcript))
