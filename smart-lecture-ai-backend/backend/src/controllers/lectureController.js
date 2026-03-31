@@ -115,9 +115,11 @@ exports.uploadLecture = async (req, res) => {
    =========================================================== */
 exports.getLectures = async (req, res) => {
   try {
-    const query = req.user?._id ? { teacher: req.user._id } : {};
+    // Teachers/admins see their own uploads; students see all lectures
+    const role = req.user?.role;
+    const query = role === "teacher" ? { teacher: req.user._id } : {};
     const lectures = await Lecture.find(query).sort({ createdAt: -1 });
-    clog(`📚 Fetched ${lectures.length} lectures.`);
+    clog(`📚 Fetched ${lectures.length} lectures for role=${role}.`);
     res.json({ lectures });
   } catch (err) {
     clog("❌ getLectures error:", err.message);

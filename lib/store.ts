@@ -56,6 +56,19 @@ export const useAppStore = create(
         }
       },
 
+      // 🔹 UPDATE PROFILE
+      async updateProfile(data: { name?: string; email?: string }) {
+        try {
+          const res = await apiService.updateProfile(data)
+          const updatedUser = res.user
+          set({ user: updatedUser })
+          return true
+        } catch (err) {
+          console.error("Update profile failed:", err)
+          return false
+        }
+      },
+
       // 🔹 LOGOUT
       logout() {
         localStorage.removeItem("token")

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -52,7 +53,7 @@ export default function LecturesPage() {
   const handleAddLecture = async () => {
     if (!newLecture.title) return
     if (!newLecture.url && !newLecture.videoFile && !newLecture.audioFile && !newLecture.pptFile) {
-      alert("Please provide a YouTube URL or upload at least one file.")
+      toast.error("Please provide a YouTube URL or upload at least one file.")
       return
     }
 
@@ -67,8 +68,9 @@ export default function LecturesPage() {
       })
       setNewLecture({ title: "", url: "", pptFile: null, audioFile: null, videoFile: null })
       setIsDialogOpen(false)
+      toast.success("Lecture uploaded successfully")
     } catch {
-      alert("Upload failed. Please try again.")
+      toast.error("Upload failed. Please try again.")
     } finally {
       setIsUploading(false)
     }

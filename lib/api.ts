@@ -23,6 +23,14 @@ export const apiService = {
     return res.data
   },
 
+  async updateProfile(data: { name?: string; email?: string }) {
+    const token = localStorage.getItem("token")
+    const res = await axios.patch(`${API_URL}/auth/profile`, data, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.data
+  },
+
   // 🔹 LECTURES
   async getLectures() {
     const token = localStorage.getItem("token")

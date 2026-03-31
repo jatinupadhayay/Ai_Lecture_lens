@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,7 +30,11 @@ export default function LoginPage() {
 
     try {
       const success = await login(formData.email, formData.password)
-      if (!success) setError("Invalid email or password.")
+      if (success) {
+        toast.success("Welcome back!")
+      } else {
+        setError("Invalid email or password.")
+      }
     } catch {
       setError("An error occurred. Please try again.")
     } finally {

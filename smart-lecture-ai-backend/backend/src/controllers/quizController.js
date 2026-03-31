@@ -12,16 +12,25 @@ exports.getQuizByLecture = async (req, res) => {
     const lecture = await Lecture.findById(req.params.lectureId);
     if (!lecture) return res.status(404).json({ message: 'Lecture not found' });
 
-    if (!lecture.quiz || (!lecture.quiz.merged?.length && !lecture.quiz.local?.length && !lecture.quiz.ai?.length)) {
-      return res.json({ quizzes: [] });
+    // Prefer structured quiz data from OpenAI JSON output
+    let questions = [];
+    if (lecture.quizStructured && lecture.quizStructured.length > 0) {
+      questions = lecture.quizStructured.map((q, i) => ({
+        id: `q-${i}`,
+        question: q.question,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+      }));
+    } else {
+      // Fallback: parse raw text lines
+      const quizLines = lecture.quiz?.merged?.length ? lecture.quiz.merged
+        : lecture.quiz?.ai?.length ? lecture.quiz.ai
+        : lecture.quiz?.local || [];
+      questions = parseQuizLines(quizLines);
     }
 
-    const quizLines = lecture.quiz.merged?.length ? lecture.quiz.merged
-      : lecture.quiz.ai?.length ? lecture.quiz.ai
-      : lecture.quiz.local || [];
-
-    // Parse raw quiz lines into structured questions
-    const questions = parseQuizLines(quizLines);
+    const hasNoQuiz = questions.length === 0 &&
+      (!lecture.quiz || (!lecture.quiz.merged?.length && !lecture.quiz.local?.length && !lecture.quiz.ai?.length));
 
     res.json({
       quizzes: questions.length > 0 ? [{

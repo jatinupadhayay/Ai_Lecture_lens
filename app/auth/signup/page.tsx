@@ -4,6 +4,7 @@ import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,6 +45,7 @@ export default function SignupPage() {
     try {
       const success = await signup(formData.name, formData.email, formData.password)
       if (success) {
+        toast.success("Account created!")
         router.push("/dashboard")
       } else {
         setError("Failed to create account. Please try again.")

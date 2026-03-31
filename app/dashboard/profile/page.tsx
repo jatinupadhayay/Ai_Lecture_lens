@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,7 +10,6 @@ import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { User, Mail, Calendar, Trophy, BookOpen, Brain, TrendingUp, Save, Edit } from "lucide-react"
 
 export default function ProfilePage() {
@@ -17,7 +17,6 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({ name: user?.name || "", email: user?.email || "" })
   const [isSaving, setIsSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState("")
 
   if (!user) return null
 
@@ -29,12 +28,15 @@ export default function ProfilePage() {
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      updateProfile(formData)
-      setIsEditing(false)
-      setSaveMessage("Profile updated")
-      setTimeout(() => setSaveMessage(""), 3000)
+      const success = await updateProfile(formData)
+      if (success) {
+        setIsEditing(false)
+        toast.success("Profile updated")
+      } else {
+        toast.error("Failed to update profile")
+      }
     } catch {
-      setSaveMessage("Failed to update")
+      toast.error("Failed to update profile")
     } finally {
       setIsSaving(false)
     }
@@ -53,8 +55,6 @@ export default function ProfilePage() {
           </Button>
         )}
       </div>
-
-      {saveMessage && <Alert><AlertDescription>{saveMessage}</AlertDescription></Alert>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
