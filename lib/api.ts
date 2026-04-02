@@ -1,131 +1,143 @@
-// 📁 src/lib/api.ts
 import axios from "axios"
+import type {
+  Lecture,
+  LectureSummaryResponse,
+  LectureUploadPayload,
+  Quiz,
+  User,
+} from "@/lib/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
 
+function getToken() {
+  if (typeof window === "undefined") return ""
+  return localStorage.getItem("token") || ""
+}
+
+function authHeaders() {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 export const apiService = {
-  // 🔹 AUTH
-  async login(email: string, password: string) {
-    const res = await axios.post(`${API_URL}/auth/login`, { email, password })
-    return res.data
+  async login(email: string, password: string): Promise<{ token: string; user: User }> {
+    const response = await axios.post(`${API_URL}/auth/login`, { email, password })
+    return response.data
   },
 
-  async signup(name: string, email: string, password: string) {
-    const res = await axios.post(`${API_URL}/auth/register`, { name, email, password })
-    return res.data
+  async signup(name: string, email: string, password: string): Promise<{ token: string; user: User }> {
+    const response = await axios.post(`${API_URL}/auth/register`, { name, email, password })
+    return response.data
   },
 
-  async getProfile() {
-    const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/auth/profile`, {
-      headers: { Authorization: `Bearer ${token}` },
+  async getProfile(): Promise<User> {
+    const response = await axios.get(`${API_URL}/auth/profile`, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
   },
 
-  async updateProfile(data: { name?: string; email?: string }) {
-    const token = localStorage.getItem("token")
-    const res = await axios.patch(`${API_URL}/auth/profile`, data, {
-      headers: { Authorization: `Bearer ${token}` },
+  async updateProfile(data: { name?: string; email?: string }): Promise<{ user: User }> {
+    const response = await axios.patch(`${API_URL}/auth/profile`, data, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
   },
 
-  // 🔹 LECTURES
-  async getLectures() {
-    const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/lectures`, {
-      headers: { Authorization: `Bearer ${token}` },
+  async getLectures(): Promise<{ lectures: Lecture[] }> {
+    const response = await axios.get(`${API_URL}/lectures`, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
   },
 
-  async getLecture(id: string) {
-    const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/lectures/${id}`, {
-      headers: { Authorization: `Bearer ${token}` },
+  async getLecture(id: string): Promise<Lecture> {
+    const response = await axios.get(`${API_URL}/lectures/${id}`, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
   },
 
-  async getLectureSummary(id: string) {
-    const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/lectures/${id}/summary`, {
-      headers: { Authorization: `Bearer ${token}` },
+  async getLectureSummary(id: string): Promise<LectureSummaryResponse> {
+    const response = await axios.get(`${API_URL}/lectures/${id}/summary`, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
   },
 
-  async processLecture(id: string) {
-    const token = localStorage.getItem("token")
-    const res = await axios.post(`${API_URL}/lectures/${id}/process`, {}, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    return res.data
+  async processLecture(id: string): Promise<{
+    lecture: Lecture
+    processingFailed: boolean
+    processingMode: "queue" | "inline"
+    message: string
+  }> {
+    const response = await axios.post(
+      `${API_URL}/lectures/${id}/process`,
+      {},
+      { headers: authHeaders() }
+    )
+    return response.data
   },
 
-  async uploadLecture(payload: {
-    title: string
-    description?: string
-    youtubeUrl?: string
-    audioUrl?: string
-    videoFile?: File | null
-    audioFile?: File | null
-    pptFile?: File | null
-  }) {
-    const token = localStorage.getItem("token")
-    const form = new FormData()
+  async uploadLecture(payload: LectureUploadPayload): Promise<{
+    lecture: Lecture
+    processingFailed: boolean
+    processingMode: "queue" | "inline"
+    message: string
+  }> {
+    const formData = new FormData()
 
-    form.append("title", payload.title)
-    if (payload.description) form.append("description", payload.description)
-    if (payload.youtubeUrl) form.append("youtubeUrl", payload.youtubeUrl)
-    if (payload.audioUrl) form.append("audioUrl", payload.audioUrl)
-    if (payload.videoFile) form.append("video", payload.videoFile)
-    if (payload.audioFile) form.append("audio", payload.audioFile)
-    if (payload.pptFile) form.append("ppt", payload.pptFile)
+    formData.append("title", payload.title)
+    if (payload.description) formData.append("description", payload.description)
+    if (payload.youtubeUrl) formData.append("youtubeUrl", payload.youtubeUrl)
+    if (payload.audioUrl) formData.append("audioUrl", payload.audioUrl)
+    if (payload.videoFile) formData.append("video", payload.videoFile)
+    if (payload.audioFile) formData.append("audio", payload.audioFile)
+    if (payload.pptFile) formData.append("ppt", payload.pptFile)
 
-    const res = await axios.post(`${API_URL}/lectures/upload`, form, {
+    const response = await axios.post(`${API_URL}/lectures/upload`, formData, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...authHeaders(),
         "Content-Type": "multipart/form-data",
       },
     })
-    return res.data
+    return response.data
   },
 
-  // 🔹 QUIZZES
-  async getLectureQuizzes(lectureId: string) {
-    const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/quizzes/lecture/${lectureId}`, {
-      headers: { Authorization: `Bearer ${token}` },
+  async getQuizzes(): Promise<{ quizzes: Quiz[] }> {
+    const response = await axios.get(`${API_URL}/quizzes`, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
+  },
+
+  async getLectureQuizzes(lectureId: string): Promise<{ quizzes: Quiz[] }> {
+    const response = await axios.get(`${API_URL}/quizzes/lecture/${lectureId}`, {
+      headers: authHeaders(),
+    })
+    return response.data
   },
 
   async submitQuiz(quizId: string, answers: number[]) {
-    const token = localStorage.getItem("token")
-    const res = await axios.post(
+    const response = await axios.post(
       `${API_URL}/quizzes/attempt`,
       { quizId, answers },
-      { headers: { Authorization: `Bearer ${token}` } }
+      { headers: authHeaders() }
     )
-    return res.data
+    return response.data
   },
 
-  // 🔹 ANALYTICS
   async getStudentAnalytics() {
-    const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/analytics/student`, {
-      headers: { Authorization: `Bearer ${token}` },
+    const response = await axios.get(`${API_URL}/analytics/student`, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
   },
 
   async getLeaderboard() {
-    const token = localStorage.getItem("token")
-    const res = await axios.get(`${API_URL}/analytics/leaderboard`, {
-      headers: { Authorization: `Bearer ${token}` },
+    const response = await axios.get(`${API_URL}/analytics/leaderboard`, {
+      headers: authHeaders(),
     })
-    return res.data
+    return response.data
   },
 }

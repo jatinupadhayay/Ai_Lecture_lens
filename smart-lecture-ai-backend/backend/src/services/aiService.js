@@ -277,16 +277,22 @@ exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audi
   try {
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
-    if (videoPath && fs.existsSync(videoPath)) return { videoPath };
-    if (youtubeUrl) return { videoPath: await downloadYouTubeVideo(youtubeUrl, tmpDir) };
-    if (audioPath && fs.existsSync(audioPath)) return { audioPath };
-    if (audioUrl) return { audioPath: await downloadFileFromUrl(audioUrl, tmpDir, "audio") };
-    if (pptPath && fs.existsSync(pptPath)) return { pptPath };
+    if (videoPath && fs.existsSync(videoPath)) return { videoPath, cleanupPaths: [] };
+    if (youtubeUrl) {
+      const downloadedVideoPath = await downloadYouTubeVideo(youtubeUrl, tmpDir);
+      return { videoPath: downloadedVideoPath, cleanupPaths: [downloadedVideoPath] };
+    }
+    if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
+    if (audioUrl) {
+      const downloadedAudioPath = await downloadFileFromUrl(audioUrl, tmpDir, "audio");
+      return { audioPath: downloadedAudioPath, cleanupPaths: [downloadedAudioPath] };
+    }
+    if (pptPath && fs.existsSync(pptPath)) return { pptPath, cleanupPaths: [] };
 
     log("No valid input found");
-    return {};
+    return { cleanupPaths: [] };
   } catch (err) {
     errLog("prepareInputs failed:", err.message);
-    return {};
+    return { cleanupPaths: [] };
   }
 };
