@@ -173,4 +173,39 @@ Project_Report-[M_Project_Report.pdf](https://github.com/user-attachments/files/
 
 Designe_Thinking on this Project-[Smart Lecture AI-Lens-ppt.pdf](https://github.com/user-attachments/files/25138632/Smart.Lecture.AI-Lens-ppt.pdf)
 
-<img width="1663" height="757" alt="Screenshot 2025-11-01 021139" src="https://github.com/user-attachments/assets/5bd7a405-7e66-4f27-9f4b-b5033b0878c7" /><img width="1693" height="756" alt="Screenshot 2025-11-01 021053" src="https://github.com/user-attachments/assets/f2d2a0ce-da32-456e-b3e8-b96a5e987d71" /><img width="1136" height="609" alt="Screenshot 2025-09-11 131644" src="https://github.com/user-attachments/assets/fb8d8a0b-f38c-4681-82bb-7840300d3c38" />
+## 📸 Screenshots
+
+### 🏠 Landing & Features
+<p align="center">
+    <img src="https://github.com/user-attachments/assets/12c2b6fb-0b08-43b1-b979-179d4186653c" width="45%" />
+    <img src="https://github.com/user-attachments/assets/8711d931-2bc4-4206-9392-b25fee64fa94" width="45%" />
+    
+</p>
+
+### 🔐 Authentication
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/947180f3-3619-4bdf-85f1-1d2eac56e0d9" width="45%" />
+  <img src="https://github.com/user-attachments/assets/a7b137db-0f97-4158-bf6e-071f79b90e9e" width="45%" />
+</p>
+
+### 📊 Dashboard & Lectures
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/1bc6f6ee-90de-4e72-9727-67190aa8b572" width="45%" />
+</p>
+
+### 🧠 Quiz Flow
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/5be7e70f-cc56-4c0a-a16b-aa2de933143b" width="45%" />
+  <img src="https://github.com/user-attachments/assets/b6e24bfc-d6ee-4737-b9cf-ac557314d1d8" width="45%" />
+</p>
+
+### 📈 Analytics & Progress
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/58f8d151-b292-456b-8f9d-63c3b1e8ff42" width="45%" />
+  <img src="https://github.com/user-attachments/assets/1ea236fd-0593-4599-a239-1bcead060464" width="45%" />
+</p>
+
+### 👤 Profile
+<p align="center">
+   <img src="https://github.com/user-attachments/assets/c9b1b648-8f78-4dc4-b1f5-8ee3b8746787" width="45%" />
+</p>
