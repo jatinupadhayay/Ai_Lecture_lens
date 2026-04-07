@@ -12,6 +12,9 @@ const FormData = require("form-data");
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
 const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
 
+// FastAPI service base URL (for vector store + direct endpoints)
+const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
+
 // FastAPI service URLs (preferred)
 const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
 const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
@@ -242,18 +245,69 @@ exports.extract = async (filePath) => {
 };
 
 /* ===========================================================
+   Vector store helpers
+   =========================================================== */
+async function queryVectors(documentId, query, topK = 5) {
+  try {
+    const resp = await axios.post(
+      `${PYTHON_AI_URL}/query-document`,
+      { document_id: documentId, query, top_k: topK },
+      { timeout: 15000 }
+    );
+    return resp.data.chunks || [];
+  } catch (err) {
+    errLog(`Vector query failed for ${documentId}:`, err.message);
+    return [];
+  }
+}
+
+exports.ingestLectureText = async (lectureId, text) => {
+  if (!text?.trim()) return false;
+  try {
+    await axios.post(
+      `${PYTHON_AI_URL}/ingest-text`,
+      { document_id: `lecture_${lectureId}`, text, title: `Lecture ${lectureId}` },
+      { timeout: 120000 }
+    );
+    log(`Ingested lecture transcript for ${lectureId}`);
+    return true;
+  } catch (err) {
+    errLog(`Lecture text ingest failed for ${lectureId}:`, err.message);
+    return false;
+  }
+};
+
+/* ===========================================================
    Dual Quiz Generator (Local + OpenAI structured JSON)
    =========================================================== */
-exports.generateQuiz = async (text, numQuestions = 5) => {
+exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentIds = [] } = {}) => {
   log(`Generating quiz, text length: ${text?.length || 0}`);
   let localQuiz = [];
   let aiQuiz = [];
   let aiQuizStructured = [];
 
+  // ── Semantic context from ChromaDB ──
+  let semanticContext = "";
+  if (lectureId) {
+    const allChunks = [];
+    const lectureChunks = await queryVectors(`lecture_${lectureId}`, "key concepts definitions examples", 6);
+    allChunks.push(...lectureChunks);
+    for (const bookId of bookDocumentIds) {
+      const bookChunks = await queryVectors(bookId, "key concepts definitions", 3);
+      allChunks.push(...bookChunks);
+    }
+    if (allChunks.length > 0) {
+      semanticContext = allChunks.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
+      log(`Quiz semantic context: ${allChunks.length} chunks`);
+    }
+  }
+
+  const quizContent = semanticContext || text;
+
   // Local quiz via FastAPI or spawnSync
   if (QUIZ_URL) {
     try {
-      const data = await axios.post(QUIZ_URL, { text, num_questions: numQuestions }, { timeout: 120000 });
+      const data = await axios.post(QUIZ_URL, { text: quizContent, num_questions: numQuestions }, { timeout: 120000 });
       const result = data.data;
       if (result.questions) {
         localQuiz = result.questions.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q));
@@ -303,7 +357,7 @@ Return ONLY a JSON object with this exact structure:
 }
 correctAnswer is the 0-based index of the correct option. Generate exactly ${numQuestions} questions.`,
           },
-          { role: "user", content: `Generate ${numQuestions} MCQs from this lecture content:\n${text}` },
+          { role: "user", content: `Generate ${numQuestions} MCQs from this lecture content:\n${quizContent}` },
         ],
       });
       const raw = completion.choices?.[0]?.message?.content || "{}";
@@ -333,52 +387,86 @@ correctAnswer is the 0-based index of the correct option. Generate exactly ${num
 /* ===========================================================
    Dual Summarization (Local + OpenAI)
    =========================================================== */
-exports.dualSummarize = async (cleanText) => {
+exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = {}) => {
   log("Summarizing, text length:", cleanText?.length || 0);
   let localSummary = "";
   let aiSummary = "";
 
-  // FastAPI summarization (preferred)
-  if (SUMMARIZE_URL) {
-    try {
-      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
-      localSummary = res.data?.summary || "";
-      log("FastAPI summary length:", localSummary.length);
-    } catch (err) {
-      errLog("FastAPI summarize failed (skipping local fallback, relying on OpenAI):", err.message);
+  // ── Semantic retrieval from ChromaDB ──
+  let semanticContext = "";
+  if (lectureId) {
+    const allChunks = [];
+    const queries = ["main topics and key concepts", "important definitions and explanations", "examples and applications"];
+    for (const q of queries) {
+      const chunks = await queryVectors(`lecture_${lectureId}`, q, 4);
+      allChunks.push(...chunks);
     }
-  } else {
-    // Local summarization only when FastAPI is not configured
-    const cleanTmp = path.join(os.tmpdir(), `lns_clean_${Date.now()}.txt`);
-    const summTmp = path.join(os.tmpdir(), `lns_summ_${Date.now()}.txt`);
-    try {
-      fs.writeFileSync(cleanTmp, cleanText, "utf8");
-      const cleanRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanTmp], { encoding: "utf8" });
-      if (cleanRes.status !== 0) errLog("cleaner.py stderr:", cleanRes.stderr);
-      const cleaned = cleanRes.stdout?.toString().trim() || cleanText;
-
-      fs.writeFileSync(summTmp, cleaned, "utf8");
-      const local = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "summarize.py"), summTmp], { encoding: "utf8" });
-      if (local.status !== 0) errLog("summarize.py stderr:", local.stderr);
-      localSummary = local.stdout?.toString().trim() || "";
-      log("Local summary length:", localSummary.length);
-    } catch (err) {
-      errLog("Local summarize failed:", err.message);
-    } finally {
-      fs.rmSync(cleanTmp, { force: true });
-      fs.rmSync(summTmp, { force: true });
+    for (const bookId of bookDocumentIds) {
+      const chunks = await queryVectors(bookId, "relevant theory and concepts", 3);
+      allChunks.push(...chunks);
+    }
+    // Deduplicate by chunk_index
+    const seen = new Set();
+    const unique = allChunks.filter((c) => {
+      const key = `${c.chunk_index ?? c.text?.slice(0, 40)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (unique.length > 0) {
+      semanticContext = unique.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
+      log(`Summary semantic context: ${unique.length} chunks (lecture + ${bookDocumentIds.length} books)`);
     }
   }
 
-  // OpenAI summarization
+  // ── Local BART summarization (only when no semantic context available) ──
+  if (!semanticContext) {
+    if (SUMMARIZE_URL) {
+      try {
+        const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
+        localSummary = res.data?.summary || "";
+        log("FastAPI summary length:", localSummary.length);
+      } catch (err) {
+        errLog("FastAPI summarize failed (skipping local fallback, relying on OpenAI):", err.message);
+      }
+    } else {
+      const cleanTmp = path.join(os.tmpdir(), `lns_clean_${Date.now()}.txt`);
+      const summTmp = path.join(os.tmpdir(), `lns_summ_${Date.now()}.txt`);
+      try {
+        fs.writeFileSync(cleanTmp, cleanText, "utf8");
+        const cleanRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanTmp], { encoding: "utf8" });
+        if (cleanRes.status !== 0) errLog("cleaner.py stderr:", cleanRes.stderr);
+        const cleaned = cleanRes.stdout?.toString().trim() || cleanText;
+
+        fs.writeFileSync(summTmp, cleaned, "utf8");
+        const local = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "summarize.py"), summTmp], { encoding: "utf8" });
+        if (local.status !== 0) errLog("summarize.py stderr:", local.stderr);
+        localSummary = local.stdout?.toString().trim() || "";
+        log("Local summary length:", localSummary.length);
+      } catch (err) {
+        errLog("Local summarize failed:", err.message);
+      } finally {
+        fs.rmSync(cleanTmp, { force: true });
+        fs.rmSync(summTmp, { force: true });
+      }
+    }
+  }
+
+  // ── OpenAI summarization — uses semantic context when available ──
   try {
     if (process.env.OPENAI_API_KEY) {
       log("Calling OpenAI for summarization...");
+      const contentToSummarize = semanticContext || cleanText;
+      const hasBooks = bookDocumentIds?.length > 0;
+      const systemPrompt = semanticContext
+        ? `You are an expert educational AI. Generate a comprehensive, well-structured summary from the lecture content${hasBooks ? " and supplementary book material" : ""} provided below. Use this format:\n\n## Overview\n## Key Concepts\n## Important Details\n## Takeaways\n\nBe concise, clear, and educational. Avoid filler words.`
+        : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways.";
+
       const resp = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways." },
-          { role: "user", content: cleanText },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: contentToSummarize },
         ],
       });
       aiSummary = resp.choices?.[0]?.message?.content || "";

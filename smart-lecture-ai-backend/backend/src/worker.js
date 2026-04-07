@@ -16,7 +16,11 @@ async function run() {
       console.log(`[worker] Lecture ${job.data.lectureId} completed.`);
       return { success: true };
     },
-    { connection }
+    {
+      connection,
+      lockDuration: 900000,    // 15 minutes — prevents lock expiry on long transcriptions
+      lockRenewTime: 300000,   // renew every 5 minutes
+    }
   );
 
   worker.on("completed", (job) => {

@@ -98,12 +98,20 @@ async function processLectureJob({
       throw new Error("Processing finished without extractable lecture text.");
     }
 
-    // Clean + extract key content once — reduces tokens for both summarize and quiz
+    // Ingest lecture transcript into ChromaDB for semantic retrieval
+    const lectureIdStr = lectureId.toString();
+    const ingested = await aiService.ingestLectureText(lectureIdStr, lectureText);
+    console.log(`[lectureProcessing] Transcript ingested into vector store: ${ingested}`);
+
+    // Clean + extract key content — used as fallback when vector store unavailable
     const preparedText = await aiService.prepareText(lectureText);
 
+    const bookDocumentIds = (lecture.bookDocumentIds || []).map((id) => id.toString());
+    const semanticOpts = { lectureId: lectureIdStr, bookDocumentIds };
+
     const [summaryResult, quizResult] = await Promise.all([
-      aiService.dualSummarize(preparedText),
-      aiService.generateQuiz(preparedText, 7),
+      aiService.dualSummarize(preparedText, semanticOpts),
+      aiService.generateQuiz(preparedText, 7, semanticOpts),
     ]);
     const localSummary = summaryResult.localSummary || "";
     const aiSummary = summaryResult.aiSummary || "";

@@ -44,9 +44,10 @@ except Exception as _e:
     print(f"[main] WARNING: summarize import failed: {_e}", file=sys.stderr)
 
 try:
-    from document_processor import process_document
+    from document_processor import process_document, chunk_text as _chunk_text
 except Exception as _e:
     process_document = None
+    _chunk_text = None
     print(f"[main] WARNING: document_processor import failed: {_e}", file=sys.stderr)
 
 try:
@@ -167,6 +168,40 @@ async def summarize(payload: dict):
         return {"summary": summary}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Summarization failed: {e}")
+
+
+@app.post("/ingest-text")
+async def ingest_text(payload: dict):
+    """
+    Ingest raw text (e.g. lecture transcript) directly into ChromaDB — no file upload needed.
+    Used to index lecture transcripts and slide text for semantic retrieval.
+    """
+    if _chunk_text is None or ingest is None:
+        raise HTTPException(status_code=500, detail="Document processing modules unavailable")
+
+    document_id = payload.get("document_id", "")
+    text = payload.get("text", "")
+    title = payload.get("title", "")
+
+    if not document_id:
+        raise HTTPException(status_code=400, detail="`document_id` is required")
+    if not text:
+        raise HTTPException(status_code=400, detail="`text` is required")
+
+    try:
+        def _run():
+            chunks = _chunk_text(text, chunk_size=400, overlap=50)
+            chunk_count = ingest(
+                document_id=document_id,
+                chunks=chunks,
+                doc_metadata={"title": title, "source": "lecture_transcript"},
+            )
+            return {"chunk_count": chunk_count, "total_words": len(text.split())}
+
+        data = await asyncio.to_thread(_run)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Text ingestion failed: {e}")
 
 
 @app.post("/ingest-document")
