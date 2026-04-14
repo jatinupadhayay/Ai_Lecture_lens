@@ -305,10 +305,16 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
   const quizContent = semanticContext || text;
 
   // Local quiz via FastAPI or spawnSync
+  let localQuizStructured = [];
   if (QUIZ_URL) {
     try {
       const data = await axios.post(QUIZ_URL, { text: quizContent, num_questions: numQuestions }, { timeout: 120000 });
       const result = data.data;
+      // Use new structured MCQ format from Flan-T5 when available
+      if (result.structured && Array.isArray(result.structured)) {
+        localQuizStructured = result.structured;
+        log("Quiz via FastAPI (structured):", localQuizStructured.length, "MCQs");
+      }
       if (result.questions) {
         localQuiz = result.questions.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q));
       }
@@ -376,11 +382,14 @@ correctAnswer is the 0-based index of the correct option. Generate exactly ${num
     errLog("OpenAI quiz failed:", err.message);
   }
 
+  // Use OpenAI structured quiz if available, otherwise fall back to Flan-T5 structured
+  const finalStructured = aiQuizStructured.length > 0 ? aiQuizStructured : localQuizStructured;
+
   return {
     localQuiz,
     aiQuiz,
     mergedQuiz: [...localQuiz, "---", ...aiQuiz],
-    aiQuizStructured,
+    aiQuizStructured: finalStructured,
   };
 };
 

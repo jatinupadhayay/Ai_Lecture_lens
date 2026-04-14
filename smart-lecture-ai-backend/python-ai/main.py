@@ -132,8 +132,18 @@ async def quiz(payload: dict):
         raise HTTPException(status_code=400, detail="`text` is required")
 
     try:
-        questions = await asyncio.to_thread(generate_quiz, text, num_questions)
-        return {"questions": questions}
+        results = await asyncio.to_thread(generate_quiz, text, num_questions)
+
+        # results is now a list of structured MCQ dicts:
+        # [{"question": "...", "options": [...], "correctAnswer": 0}, ...]
+        # For backward compat, also return flat text lines
+        from quiz_generator import format_mcq_lines
+        text_lines = format_mcq_lines(results)
+
+        return {
+            "questions": text_lines,          # backward compat (list of strings)
+            "structured": results,             # new structured MCQ format
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Quiz generation failed: {e}")
 
