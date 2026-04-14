@@ -2,11 +2,10 @@ const path = require("path");
 const fs = require("fs");
 const axios = require("axios");
 const FormData = require("form-data");
-const OpenAI = require("openai");
+const { geminiChat } = require("../services/gemini");
 const Document = require("../models/Document");
 
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const log = (...m) => console.log("[documentController]", ...m);
 const errLog = (...m) => console.error("[documentController]", ...m);
@@ -152,33 +151,23 @@ Keep answers concise, accurate, and educational.`;
 
   // Include last 6 messages for conversational context
   const recentHistory = (doc.chatHistory || []).slice(-6).map((m) => ({
-    role: m.role,
-    content: m.content,
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
   }));
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-    {
-      role: "user",
-      content: `Document excerpts:\n\n${contextText}\n\n---\nQuestion: ${message}`,
-    },
-    ...recentHistory,
-    { role: "user", content: message },
-  ];
+  const userMessage = `Document excerpts:\n\n${contextText}\n\n---\nQuestion: ${message}`;
 
-  // 3. Call OpenAI
+  // 3. Call Gemini
   let answer = "";
   try {
-    const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      messages,
-      max_tokens: 600,
+    answer = await geminiChat(systemPrompt, userMessage, {
+      maxTokens: 600,
       temperature: 0.3,
+      history: recentHistory,
     });
-    answer = completion.choices[0].message.content.trim();
   } catch (err) {
-    errLog("OpenAI chat failed:", err.message);
-    // Fallback: return raw context chunks if OpenAI is unavailable
+    errLog("Gemini chat failed:", err.message);
+    // Fallback: return raw context chunks if Gemini is unavailable
     answer = `Here are the most relevant sections I found:\n\n${contextChunks.map((c) => c.text).join("\n\n")}`;
   }
 

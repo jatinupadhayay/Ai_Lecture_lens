@@ -5,8 +5,8 @@ const path = require("path");
 const axios = require("axios");
 const { spawnSync } = require("child_process");
 const ytdl = require("@distube/ytdl-core");
-const OpenAI = require("openai");
 const FormData = require("form-data");
+const { geminiChat, geminiJSON } = require("./gemini");
 
 // Python paths — used as fallback when FastAPI is unavailable
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
@@ -22,10 +22,6 @@ const QUIZ_URL = process.env.QUIZ_SERVICE_URL || null;
 const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
 const CLEAN_URL = process.env.CLEAN_SERVICE_URL
   || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const log = (...msg) => console.log("[aiService]", ...msg);
 const errLog = (...msg) => console.error("[aiService]", ...msg);
@@ -340,17 +336,12 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
     }
   }
 
-  // OpenAI quiz — structured JSON output
+  // Gemini quiz — structured JSON output
   try {
-    if (process.env.OPENAI_API_KEY) {
-      log("Calling OpenAI for structured quiz...");
-      const completion = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: `You are an educational AI. Generate multiple-choice quizzes as JSON.
+    if (process.env.GEMINI_API_KEY) {
+      log("Calling Gemini 2.0 Flash for structured quiz...");
+
+      const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
 Return ONLY a JSON object with this exact structure:
 {
   "questions": [
@@ -361,13 +352,15 @@ Return ONLY a JSON object with this exact structure:
     }
   ]
 }
-correctAnswer is the 0-based index of the correct option. Generate exactly ${numQuestions} questions.`,
-          },
-          { role: "user", content: `Generate ${numQuestions} MCQs from this lecture content:\n${quizContent}` },
-        ],
-      });
-      const raw = completion.choices?.[0]?.message?.content || "{}";
-      const parsed = JSON.parse(raw);
+correctAnswer is the 0-based index of the correct option. Generate exactly ${numQuestions} questions.
+Make questions educational, clear, and test understanding — not just recall.
+Each option should be plausible. Avoid "All of the above" or "None of the above".`;
+
+      const parsed = await geminiJSON(
+        systemPrompt,
+        `Generate ${numQuestions} MCQs from this lecture content:\n${quizContent}`
+      );
+
       if (parsed.questions && Array.isArray(parsed.questions)) {
         aiQuizStructured = parsed.questions;
         const letters = ["A", "B", "C", "D"];
@@ -376,10 +369,10 @@ correctAnswer is the 0-based index of the correct option. Generate exactly ${num
           return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
         });
       }
-      log("OpenAI structured quiz:", aiQuizStructured.length, "questions");
+      log("Gemini structured quiz:", aiQuizStructured.length, "questions");
     }
   } catch (err) {
-    errLog("OpenAI quiz failed:", err.message);
+    errLog("Gemini quiz failed:", err.message);
   }
 
   // Use OpenAI structured quiz if available, otherwise fall back to Flan-T5 structured
@@ -461,28 +454,24 @@ exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = 
     }
   }
 
-  // ── OpenAI summarization — uses semantic context when available ──
+  // ── Gemini summarization — uses semantic context when available ──
   try {
-    if (process.env.OPENAI_API_KEY) {
-      log("Calling OpenAI for summarization...");
+    if (process.env.GEMINI_API_KEY) {
+      log("Calling Gemini 2.0 Flash for summarization...");
       const contentToSummarize = semanticContext || cleanText;
       const hasBooks = bookDocumentIds?.length > 0;
       const systemPrompt = semanticContext
-        ? `You are an expert educational AI. Generate a comprehensive, well-structured summary from the lecture content${hasBooks ? " and supplementary book material" : ""} provided below. Use this format:\n\n## Overview\n## Key Concepts\n## Important Details\n## Takeaways\n\nBe concise, clear, and educational. Avoid filler words.`
-        : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways.";
+        ? `You are an expert educational AI. Generate a comprehensive, well-structured summary from the lecture content${hasBooks ? " and supplementary book material" : ""} provided below. Use this format:\n\n## Overview\nA brief 2-3 sentence overview of the lecture topic.\n\n## Key Concepts\nBulleted list of the most important concepts covered.\n\n## Important Details\nDetailed explanations of complex topics, formulas, or processes.\n\n## Takeaways\nWhat students should remember and be able to apply.\n\nBe concise, clear, and educational. Use simple language. Avoid filler words.`
+        : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways. Use markdown formatting with headers.";
 
-      const resp = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: contentToSummarize },
-        ],
+      aiSummary = await geminiChat(systemPrompt, contentToSummarize, {
+        maxTokens: 4096,
+        temperature: 0.3,
       });
-      aiSummary = resp.choices?.[0]?.message?.content || "";
-      log("OpenAI summary length:", aiSummary.length);
+      log("Gemini summary length:", aiSummary.length);
     }
   } catch (err) {
-    errLog("OpenAI summarize failed:", err.message);
+    errLog("Gemini summarize failed:", err.message);
   }
 
   return { localSummary, aiSummary };
