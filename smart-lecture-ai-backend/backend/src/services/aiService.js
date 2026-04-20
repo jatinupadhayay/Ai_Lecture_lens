@@ -3,8 +3,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const axios = require("axios");
-const { spawnSync } = require("child_process");
-const ytdl = require("@distube/ytdl-core");
+const { spawnSync, execFileSync } = require("child_process");
 const FormData = require("form-data");
 const { geminiChat, geminiJSON } = require("./gemini");
 
@@ -154,36 +153,63 @@ async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
 }
 
 /* ===========================================================
-   Download YouTube Video
+   Download YouTube Video via yt-dlp (reliable, actively maintained)
    =========================================================== */
+function findYtDlp() {
+  // Prefer project-local or venv yt-dlp, fall back to system PATH
+  const candidates = [
+    process.env.YT_DLP_PATH,
+    "yt-dlp",
+    "yt-dlp.exe",
+  ].filter(Boolean);
+
+  for (const cmd of candidates) {
+    try {
+      execFileSync(cmd, ["--version"], { stdio: "pipe" });
+      return cmd;
+    } catch {
+      // not found, try next
+    }
+  }
+  throw new Error("yt-dlp not found. Install it: https://github.com/yt-dlp/yt-dlp#installation");
+}
+
 async function downloadYouTubeVideo(url, outDir) {
-  log("Downloading YouTube:", url);
-  if (!ytdl.validateURL(url)) throw new Error("Invalid YouTube URL");
+  log("Downloading YouTube via yt-dlp:", url);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-  // Prefer audio-only (smaller, faster, sufficient for transcription)
-  // Fall back to lowest combined format if audioonly unavailable
-  const info = await ytdl.getInfo(url);
-  const audioFormat = ytdl.chooseFormat(info.formats, { quality: "highestaudio", filter: "audioonly" });
-  const ext = audioFormat ? ".webm" : ".mp4";
-  const filePath = path.join(outDir, `youtube_${Date.now()}${ext}`);
+  const ytDlp = findYtDlp();
+  const outTemplate = path.join(outDir, `youtube_${Date.now()}.%(ext)s`);
 
-  const streamOpts = audioFormat
-    ? { quality: "highestaudio", filter: "audioonly" }
-    : { quality: "lowest", filter: "audioandvideo" };
+  // Download best audio only — sufficient for transcription, much smaller than video
+  const args = [
+    url,
+    "--format", "bestaudio/best",
+    "--output", outTemplate,
+    "--no-playlist",
+    "--no-warnings",
+    "--no-update",
+    "--quiet",
+  ];
 
-  const stream = ytdl.downloadFromInfo(info, streamOpts);
-  const writeStream = fs.createWriteStream(filePath);
+  log("yt-dlp args:", args.join(" "));
 
-  await new Promise((resolve, reject) => {
-    stream.on("error", reject);
-    writeStream.on("error", reject);
-    stream.pipe(writeStream);
-    writeStream.on("finish", resolve);
-  });
+  const result = spawnSync(ytDlp, args, { encoding: "utf8", timeout: 300000 });
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim() || result.error?.message || "unknown error";
+    throw new Error(`yt-dlp failed: ${stderr}`);
+  }
 
-  log("YouTube saved:", filePath);
-  return filePath;
+  // Find the downloaded file (extension varies: webm, m4a, opus, mp3…)
+  const files = fs.readdirSync(outDir)
+    .map((f) => path.join(outDir, f))
+    .filter((f) => f.includes("youtube_") && fs.statSync(f).isFile())
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+
+  if (!files.length) throw new Error("yt-dlp ran but no output file found");
+
+  log("YouTube saved:", files[0]);
+  return files[0];
 }
 
 /* ===========================================================
@@ -199,7 +225,7 @@ exports.transcribe = async (filePath) => {
       log("Transcription via FastAPI:", Array.isArray(data) ? data.length : "ok");
       return Array.isArray(data) ? data : data.transcript || [];
     } catch (err) {
-      errLog("FastAPI transcribe failed, falling back to local:", err.message);
+      errLog("FastAPI transcribe failed, falling back to local:", err.message, err.code || "", err.response?.data?.detail || "");
     }
   }
 

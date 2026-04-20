@@ -2,6 +2,7 @@ import sys
 import os
 import shutil
 import asyncio
+import uuid
 from pathlib import Path
 
 # Add ai_models directory to Python path so we can import from it
@@ -78,28 +79,51 @@ async def transcribe(file: UploadFile = File(...)):
     if transcribe_audio is None:
         raise HTTPException(status_code=500, detail="Transcriber module unavailable")
 
-    target = UPLOAD_DIR / file.filename
+    # Unique filename per request — prevents file conflicts when parallel uploads share the same name
+    req_id = uuid.uuid4().hex
+    suffix = os.path.splitext(file.filename)[1] or ".bin"
+    target = UPLOAD_DIR / f"{req_id}{suffix}"
+    wav_out = UPLOAD_DIR / f"{req_id}.wav"
+
     with open(target, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        ext = os.path.splitext(file.filename)[1].lower()
-        video_exts = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv"}
+        ext = suffix.lower()
+        needs_extraction = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".m4a", ".opus"}
 
         def _run():
             audio_path = str(target)
-            if ext in video_exts:
-                audio_path = extract_audio(str(target), output_audio=str(UPLOAD_DIR / "audio.wav"))
+            if ext in needs_extraction:
+                import subprocess
+                ffmpeg_bin = "ffmpeg"
+                try:
+                    subprocess.run([ffmpeg_bin, "-version"], capture_output=True, check=True)
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    try:
+                        import imageio_ffmpeg
+                        ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+                    except ImportError:
+                        ffmpeg_bin = None
+
+                if ffmpeg_bin:
+                    result = subprocess.run(
+                        [ffmpeg_bin, "-y", "-i", str(target), "-vn",
+                         "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", str(wav_out)],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0 and wav_out.exists():
+                        audio_path = str(wav_out)
+
             return transcribe_audio(audio_path)
 
-        # Run CPU-bound transcription in thread pool so event loop stays free
         results = await asyncio.to_thread(_run)
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
     finally:
-        if target.exists():
-            target.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
+        wav_out.unlink(missing_ok=True)
 
 
 @app.post("/extract")
@@ -107,7 +131,10 @@ async def extract(file: UploadFile = File(...)):
     if extract_text_from_video is None:
         raise HTTPException(status_code=500, detail="Extractor module unavailable")
 
-    target = UPLOAD_DIR / file.filename
+    req_id = uuid.uuid4().hex
+    suffix = os.path.splitext(file.filename)[1] or ".bin"
+    target = UPLOAD_DIR / f"{req_id}{suffix}"
+
     with open(target, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
@@ -117,8 +144,7 @@ async def extract(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Frame extraction failed: {e}")
     finally:
-        if target.exists():
-            target.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
 
 
 @app.post("/quiz")
