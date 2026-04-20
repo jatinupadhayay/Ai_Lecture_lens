@@ -46,9 +46,14 @@ venv/
 # Large backend folders / uploads / models
 smart-lecture-ai-backend/backend/uploads/
 smart-lecture-ai-backend/backend/models/
+chroma_db/
 data/processed/audio.wav
 smart-lecture-ai-backend/backend/1775458116283-base.js
 smart-lecture-ai-backend/backend/1775458116303-base.js
+
+# Deep project structure file -
+PROJECT_DEEP_DIVE.md
+
 # Git LFS or skip large file types
 *.mp4
 *.wav

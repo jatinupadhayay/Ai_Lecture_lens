@@ -30,6 +30,7 @@ import {
   Presentation,
   Upload,
   Video,
+  BookMarked,
 } from "lucide-react"
 
 export default function LecturesPage() {
@@ -43,6 +44,7 @@ export default function LecturesPage() {
     pptFile: null as File | null,
     audioFile: null as File | null,
     videoFile: null as File | null,
+    bookFiles: [] as File[],
   })
 
   useEffect(() => {
@@ -66,6 +68,7 @@ export default function LecturesPage() {
         pptFile: form.pptFile,
         audioFile: form.audioFile,
         videoFile: form.videoFile,
+        bookFiles: form.bookFiles,
       })
 
       setForm({
@@ -74,6 +77,7 @@ export default function LecturesPage() {
         pptFile: null,
         audioFile: null,
         videoFile: null,
+        bookFiles: [],
       })
       setOpen(false)
 
@@ -91,7 +95,7 @@ export default function LecturesPage() {
 
   const handleFile = (
     event: React.ChangeEvent<HTMLInputElement>,
-    type: "ppt" | "audio" | "video"
+    type: "ppt" | "audio" | "video" | "book"
   ) => {
     const file = event.target.files?.[0]
     if (file) {
@@ -216,6 +220,47 @@ export default function LecturesPage() {
                     )}
                   </div>
                 ))}
+
+                {/* Book / Reference PDFs — indexed into vector DB */}
+                <div className="space-y-2 pt-1 border-t border-border">
+                  <Label className="text-[12px] font-medium text-muted-foreground flex items-center gap-1.5">
+                    <BookMarked className="h-3 w-3 text-[#EAB308]" />
+                    Reference Books / PDFs
+                    <span className="font-normal">(optional, up to 5)</span>
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Students can ask AI questions about these in the Library.
+                  </p>
+                  <Input
+                    type="file"
+                    accept=".pdf,.docx,.doc,.txt"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      setForm((prev) => ({
+                        ...prev,
+                        bookFiles: [...prev.bookFiles, ...files].slice(0, 5),
+                      }))
+                      e.target.value = ""
+                    }}
+                    className="text-[13px] h-9 bg-secondary border-border file:text-[12px] file:mr-2"
+                  />
+                  {form.bookFiles.length > 0 && (
+                    <div className="space-y-1">
+                      {form.bookFiles.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between text-[11px] text-[#EAB308] bg-[#EAB308]/5 rounded-lg px-2.5 py-1.5">
+                          <span className="flex items-center gap-1.5 truncate">
+                            <BookMarked className="h-3 w-3 shrink-0" />{f.name}
+                          </span>
+                          <button
+                            onClick={() => setForm((prev) => ({ ...prev, bookFiles: prev.bookFiles.filter((_, j) => j !== i) }))}
+                            className="text-muted-foreground hover:text-red-400 shrink-0 ml-2"
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-1">

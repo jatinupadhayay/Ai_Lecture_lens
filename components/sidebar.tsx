@@ -6,12 +6,13 @@ import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   BookOpen, FileText, Brain, Trophy,
-  BarChart3, User, LayoutDashboard, LineChart,
+  BarChart3, User, LayoutDashboard, LineChart, Library,
 } from "lucide-react"
 
 const NAV_ITEMS = [
   { label: "Home",      href: "/dashboard",           icon: LayoutDashboard },
   { label: "Lectures",  href: "/dashboard/lectures",  icon: BookOpen },
+  { label: "Library",   href: "/dashboard/library",   icon: Library },
   { label: "Summaries", href: "/dashboard/summaries", icon: FileText },
   { label: "Quizzes",   href: "/dashboard/quizzes",   icon: Brain },
   { label: "Scores",    href: "/dashboard/scores",    icon: Trophy },

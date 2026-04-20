@@ -5,6 +5,8 @@ import type {
   LectureUploadPayload,
   Quiz,
   User,
+  Document as DocType,
+  ChatResponse,
 } from "@/lib/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
@@ -94,6 +96,7 @@ export const apiService = {
     if (payload.videoFile) formData.append("video", payload.videoFile)
     if (payload.audioFile) formData.append("audio", payload.audioFile)
     if (payload.pptFile) formData.append("ppt", payload.pptFile)
+    if (payload.bookFiles) payload.bookFiles.forEach((f) => formData.append("book", f))
 
     const response = await axios.post(`${API_URL}/lectures/upload`, formData, {
       headers: {
@@ -136,6 +139,68 @@ export const apiService = {
 
   async getLeaderboard() {
     const response = await axios.get(`${API_URL}/analytics/leaderboard`, {
+      headers: authHeaders(),
+    })
+    return response.data
+  },
+
+  // ── Documents (RAG) ──────────────────────────────────────────
+
+  async uploadDocument(
+    file: File,
+    title: string,
+    onProgress?: (pct: number) => void
+  ): Promise<{ document: DocType }> {
+    const form = new FormData()
+    form.append("file", file)
+    form.append("title", title)
+    const response = await axios.post(`${API_URL}/documents/upload`, form, {
+      headers: { ...authHeaders(), "Content-Type": "multipart/form-data" },
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100))
+      },
+    })
+    return response.data
+  },
+
+  async listDocuments(): Promise<{ documents: DocType[] }> {
+    const response = await axios.get(`${API_URL}/documents`, { headers: authHeaders() })
+    return response.data
+  },
+
+  async getDocument(id: string): Promise<{ document: DocType }> {
+    const response = await axios.get(`${API_URL}/documents/${id}`, { headers: authHeaders() })
+    return response.data
+  },
+
+  async deleteDocument(id: string): Promise<void> {
+    await axios.delete(`${API_URL}/documents/${id}`, { headers: authHeaders() })
+  },
+
+  async chatWithDocument(id: string, message: string): Promise<ChatResponse> {
+    const response = await axios.post(
+      `${API_URL}/documents/${id}/chat`,
+      { message },
+      { headers: authHeaders() }
+    )
+    return response.data
+  },
+
+  async clearDocumentChat(id: string): Promise<void> {
+    await axios.delete(`${API_URL}/documents/${id}/chat`, { headers: authHeaders() })
+  },
+
+  async uploadBookToLecture(lectureId: string, files: File[]): Promise<{ books: DocType[] }> {
+    const form = new FormData()
+    files.forEach((f) => form.append("book", f))
+    const response = await axios.post(`${API_URL}/lectures/${lectureId}/books`, form, {
+      headers: { ...authHeaders(), "Content-Type": "multipart/form-data" },
+    })
+    return response.data
+  },
+
+  async getLectureBooks(lectureId: string): Promise<{ documents: DocType[] }> {
+    const response = await axios.get(`${API_URL}/documents?lectureId=${lectureId}`, {
       headers: authHeaders(),
     })
     return response.data

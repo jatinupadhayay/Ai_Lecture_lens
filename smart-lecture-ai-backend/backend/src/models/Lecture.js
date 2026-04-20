@@ -57,6 +57,7 @@ const lectureSchema = new mongoose.Schema(
         correctAnswer: { type: Number, default: 0 },
       },
     ],
+    bookDocumentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Document" }],
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }

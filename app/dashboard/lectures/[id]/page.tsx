@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { apiService } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
-import type { Lecture } from "@/lib/types"
+import type { Document as DocType, Lecture } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,15 +17,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   ArrowLeft,
   AudioLines,
+  BookMarked,
   Brain,
+  CheckCircle2,
   Clock,
   Download,
   ExternalLink,
   FileText,
   Loader2,
+  MessageSquare,
+  Plus,
   Presentation,
   RefreshCw,
+  Trash2,
+  Upload,
 } from "lucide-react"
+import { formatDistanceToNow } from "date-fns"
+import { cn } from "@/lib/utils"
 
 export default function LectureViewerPage() {
   const { id } = useParams<{ id: string }>()
@@ -36,6 +44,13 @@ export default function LectureViewerPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reprocessing, setReprocessing] = useState(false)
+
+  // Books
+  const [books, setBooks] = useState<DocType[]>([])
+  const [uploadingBooks, setUploadingBooks] = useState(false)
+  const [bookError, setBookError] = useState("")
+  const bookInputRef = useRef<HTMLInputElement>(null)
+  const bookPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchLecture = async () => {
     try {
@@ -49,9 +64,52 @@ export default function LectureViewerPage() {
     }
   }
 
+  const fetchBooks = async () => {
+    try {
+      const { documents } = await apiService.getLectureBooks(id)
+      setBooks(documents)
+    } catch { /* ignore */ }
+  }
+
   useEffect(() => {
     fetchLecture()
+    fetchBooks()
   }, [id])
+
+  // Poll books while any are still processing
+  useEffect(() => {
+    bookPollRef.current = setInterval(() => {
+      setBooks((prev) => {
+        if (prev.some((b) => b.status === "processing")) fetchBooks()
+        return prev
+      })
+    }, 4000)
+    return () => { if (bookPollRef.current) clearInterval(bookPollRef.current) }
+  }, [])
+
+  async function handleBookUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    e.target.value = ""
+    setUploadingBooks(true)
+    setBookError("")
+    try {
+      const { books: newBooks } = await apiService.uploadBookToLecture(id, files)
+      setBooks((prev) => [...newBooks, ...prev])
+    } catch (err: any) {
+      setBookError(err?.response?.data?.message || "Upload failed.")
+    } finally {
+      setUploadingBooks(false)
+    }
+  }
+
+  async function handleDeleteBook(bookId: string) {
+    if (!confirm("Delete this book?")) return
+    try {
+      await apiService.deleteDocument(bookId)
+      setBooks((prev) => prev.filter((b) => b._id !== bookId))
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     if (!lecture || (lecture.status !== "processing" && lecture.status !== "queued")) return
@@ -252,12 +310,20 @@ export default function LectureViewerPage() {
       <Card>
         <Tabs defaultValue="summary" className="w-full">
           <CardHeader className="pb-0">
-            <TabsList className={`grid w-full ${lecture.pptUrl ? "grid-cols-3" : "grid-cols-2"}`}>
+            <TabsList className={`grid w-full ${lecture.pptUrl ? "grid-cols-4" : "grid-cols-3"}`}>
               <TabsTrigger value="summary">
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Summary
               </TabsTrigger>
               <TabsTrigger value="transcript">
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Transcript
+              </TabsTrigger>
+              <TabsTrigger value="books">
+                <BookMarked className="mr-1.5 h-3.5 w-3.5" /> Books
+                {books.length > 0 && (
+                  <span className="ml-1.5 text-[10px] bg-[#EAB308]/20 text-[#EAB308] px-1.5 py-0.5 rounded-full">
+                    {books.length}
+                  </span>
+                )}
               </TabsTrigger>
               {lecture.pptUrl && (
                 <TabsTrigger value="slides">
@@ -298,6 +364,96 @@ export default function LectureViewerPage() {
                 <p className="text-sm text-muted-foreground">
                   {isProcessing ? "Transcript generation is in progress." : "Transcript not available."}
                 </p>
+              )}
+            </TabsContent>
+
+            {/* ── Books tab ── */}
+            <TabsContent value="books" className="space-y-4">
+              {/* Upload button */}
+              <div className="flex items-center justify-between">
+                <p className="text-[12px] text-muted-foreground">
+                  {books.length === 0
+                    ? "No reference books attached yet."
+                    : `${books.length} book${books.length !== 1 ? "s" : ""} attached`}
+                </p>
+                <div>
+                  <input
+                    ref={bookInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.doc,.txt"
+                    multiple
+                    className="hidden"
+                    onChange={handleBookUpload}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => bookInputRef.current?.click()}
+                    disabled={uploadingBooks}
+                    className="h-8 text-[12px] bg-[#EAB308] hover:bg-[#EAB308]/90 text-black font-semibold"
+                  >
+                    {uploadingBooks
+                      ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading…</>
+                      : <><Plus className="h-3.5 w-3.5 mr-1.5" />Add Books</>}
+                  </Button>
+                </div>
+              </div>
+
+              {bookError && (
+                <p className="text-[12px] text-red-400">{bookError}</p>
+              )}
+
+              {/* Book list */}
+              {books.length === 0 ? (
+                <div
+                  onClick={() => bookInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center py-10 rounded-xl border-2 border-dashed border-border cursor-pointer hover:border-[#EAB308]/40 hover:bg-[#EAB308]/3 transition-all"
+                >
+                  <Upload className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                  <p className="text-sm text-muted-foreground">Drop books here or click to browse</p>
+                  <p className="text-[11px] text-muted-foreground/50 mt-1">PDF, DOCX, TXT — up to 5 files</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {books.map((book) => {
+                    const isReady = book.status === "ready"
+                    const isProcessing = book.status === "processing"
+                    return (
+                      <div key={book._id} className={cn(
+                        "group flex items-center gap-3 p-3 rounded-xl border border-border bg-card/50 transition-all",
+                        isReady && "hover:border-[#EAB308]/30 cursor-pointer"
+                      )}
+                        onClick={() => isReady && router.push(`/dashboard/library/${book._id}`)}
+                      >
+                        <div className="h-8 w-8 rounded-lg bg-accent flex items-center justify-center shrink-0">
+                          <BookMarked className="h-4 w-4 text-[#EAB308]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-foreground truncate">{book.title}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[11px] text-muted-foreground uppercase">{book.fileType}</span>
+                            {isReady && <span className="text-[11px] text-green-400 flex items-center gap-0.5"><CheckCircle2 className="h-3 w-3" />Ready</span>}
+                            {isProcessing && <span className="text-[11px] text-yellow-400 flex items-center gap-0.5"><Loader2 className="h-3 w-3 animate-spin" />Indexing…</span>}
+                            {book.status === "failed" && <span className="text-[11px] text-red-400">Failed</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {isReady && (
+                            <Button size="sm" variant="ghost"
+                              onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/library/${book._id}`) }}
+                              className="h-7 px-2 text-[11px] text-[#EAB308] hover:bg-[#EAB308]/10">
+                              <MessageSquare className="h-3.5 w-3.5 mr-1" />Ask AI
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteBook(book._id) }}
+                            className="h-7 px-2 text-red-400 hover:bg-red-400/10">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </TabsContent>
 

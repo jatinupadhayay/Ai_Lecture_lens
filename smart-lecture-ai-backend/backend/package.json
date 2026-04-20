@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
+    "@google/generative-ai": "^0.24.1",
     "aws-sdk": "^2.1400.0",
     "axios": "^1.13.1",
     "bcryptjs": "^2.4.3",
@@ -20,6 +21,7 @@
     "express-async-errors": "^3.1.1",
     "express-rate-limit": "^7.5.1",
     "form-data": "^4.0.0",
+    "groq-sdk": "^1.1.2",
     "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.0",

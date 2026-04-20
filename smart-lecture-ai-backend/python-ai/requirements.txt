@@ -12,3 +12,8 @@ transformers
 torch
 nltk
 spacy
+# RAG / vector store
+chromadb
+sentence-transformers
+pymupdf
+python-docx

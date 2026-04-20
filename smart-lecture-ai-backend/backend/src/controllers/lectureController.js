@@ -4,6 +4,7 @@ const { Queue } = require("bullmq");
 const Lecture = require("../models/Lecture");
 const { connection, isRedisAvailable } = require("../queues");
 const { processLectureJob } = require("../services/lectureProcessing");
+const { createAndIngestDocument } = require("./documentController");
 
 let aiQueue = null;
 
@@ -135,6 +136,31 @@ exports.uploadLecture = async (req, res) => {
     status: "uploaded",
   });
 
+  // If book PDFs were uploaded, ingest each into vector DB in background
+  const bookFiles = req.files?.book || [];
+  if (bookFiles.length > 0) {
+    const bookDocIds = [];
+    for (const bookFile of bookFiles) {
+      try {
+        const bookDoc = await createAndIngestDocument({
+          userId: teacher,
+          title: `${title.trim()} — ${bookFile.originalname.replace(/\.[^/.]+$/, "")}`,
+          filePath: bookFile.path,
+          fileName: bookFile.originalname,
+          fileSize: bookFile.size,
+          fileType: path.extname(bookFile.originalname).replace(".", "").toLowerCase(),
+          lectureId: lecture._id,
+          lectureTitle: title.trim(),
+        });
+        bookDocIds.push(bookDoc._id);
+      } catch (err) {
+        console.error("[lectureController] Book ingest failed:", err.message);
+      }
+    }
+    lecture.bookDocumentIds = bookDocIds;
+    await lecture.save();
+  }
+
   const result = await queueOrProcessLecture(lecture);
 
   return res.status(201).json(result);
@@ -197,6 +223,42 @@ exports.processLecture = async (req, res) => {
 
   const result = await queueOrProcessLecture(lecture);
   res.json(result);
+};
+
+// POST /api/lectures/:id/books  — add books to an existing lecture
+exports.uploadBookToLecture = async (req, res) => {
+  const lecture = await Lecture.findById(req.params.id);
+  if (!lecture) return res.status(404).json({ error: "Lecture not found" });
+
+  const bookFiles = req.files?.book || [];
+  if (bookFiles.length === 0) return res.status(400).json({ error: "No book files provided." });
+
+  const newDocIds = [];
+  const newDocs = [];
+  for (const bookFile of bookFiles) {
+    try {
+      const bookDoc = await createAndIngestDocument({
+        userId: req.user._id,
+        title: bookFile.originalname.replace(/\.[^/.]+$/, ""),
+        filePath: bookFile.path,
+        fileName: bookFile.originalname,
+        fileSize: bookFile.size,
+        fileType: path.extname(bookFile.originalname).replace(".", "").toLowerCase(),
+        lectureId: lecture._id,
+        lectureTitle: lecture.title,
+      });
+      newDocIds.push(bookDoc._id);
+      newDocs.push(bookDoc);
+    } catch (err) {
+      console.error("[lectureController] uploadBookToLecture failed:", err.message);
+    }
+  }
+
+  // Append to existing books array
+  lecture.bookDocumentIds = [...(lecture.bookDocumentIds || []), ...newDocIds];
+  await lecture.save();
+
+  res.status(201).json({ books: newDocs });
 };
 
 module.exports = {
