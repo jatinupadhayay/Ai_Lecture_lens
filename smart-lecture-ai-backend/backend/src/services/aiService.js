@@ -1,46 +1,121 @@
+require("dotenv").config();
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 const axios = require("axios");
-const { spawnSync } = require("child_process");
-const ytdl = require("@distube/ytdl-core");
-const OpenAI = require("openai");
+const { spawnSync, execFileSync } = require("child_process");
 const FormData = require("form-data");
+const Groq = require("groq-sdk");
+const { geminiChat, geminiJSON } = require("./gemini");
 
-// Python paths — used as fallback when FastAPI is unavailable
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
 const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
-
-// FastAPI service URLs (preferred)
+const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
 const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
 const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
 const QUIZ_URL = process.env.QUIZ_SERVICE_URL || null;
+const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
+const CLEAN_URL = process.env.CLEAN_SERVICE_URL
+  || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
 const log = (...msg) => console.log("[aiService]", ...msg);
 const errLog = (...msg) => console.error("[aiService]", ...msg);
 
-/* ===========================================================
-   Helper: send file to FastAPI endpoint via multipart upload
-   =========================================================== */
+function axiosErrorDetail(err) {
+  const detail = err.response?.data?.detail || err.response?.data?.error || err.response?.data;
+  if (detail) {
+    return typeof detail === "string" ? detail : JSON.stringify(detail);
+  }
+  return err.message;
+}
+
+const STOP_WORDS = new Set([
+  "the","a","an","and","or","but","in","on","at","to","for","of","with",
+  "is","are","was","were","be","been","being","have","has","had","do","does",
+  "did","will","would","could","should","may","might","this","that","these",
+  "those","it","its","we","they","he","she","you","i","so","as","by","from",
+]);
+
+function extractKeyContent(text, maxChars = 6000) {
+  const sentences = text
+    .replace(/([.?!])\s+/g, "$1\n")
+    .split("\n")
+    .map(s => s.trim())
+    .filter(s => s.length > 20);
+
+  if (!sentences.length) return text.slice(0, maxChars);
+
+  const wordFreq = {};
+  const tokenized = sentences.map(s => {
+    const words = s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/)
+      .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+    words.forEach(w => { wordFreq[w] = (wordFreq[w] || 0) + 1; });
+    return { s, words };
+  });
+
+  const scored = tokenized.map(({ s, words }) => ({
+    s,
+    score: words.length ? words.reduce((sum, w) => sum + wordFreq[w], 0) / words.length : 0,
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+  const topSet = new Set(scored.slice(0, Math.ceil(sentences.length * 0.6)).map(x => x.s));
+
+  const parts = [];
+  let len = 0;
+  for (const s of sentences.filter(s => topSet.has(s))) {
+    if (len + s.length + 1 > maxChars) break;
+    parts.push(s);
+    len += s.length + 1;
+  }
+  return parts.join(" ") || text.slice(0, maxChars);
+}
+
+exports.prepareText = async (rawText) => {
+  if (!rawText) return "";
+  log("prepareText input length:", rawText.length);
+
+  let cleaned = rawText;
+
+  if (CLEAN_URL) {
+    try {
+      const res = await axios.post(CLEAN_URL, { text: rawText }, { timeout: 60000 });
+      cleaned = res.data?.text || rawText;
+    } catch (err) {
+      errLog("FastAPI clean failed, using raw text:", err.message);
+    }
+  } else {
+    const cleanTmp = path.join(os.tmpdir(), `lns_prep_${Date.now()}.txt`);
+    try {
+      fs.writeFileSync(cleanTmp, rawText, "utf8");
+      const res = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanTmp], { encoding: "utf8" });
+      cleaned = res.stdout?.toString().trim() || rawText;
+    } catch (err) {
+      errLog("Local clean failed:", err.message);
+    } finally {
+      fs.rmSync(cleanTmp, { force: true });
+    }
+  }
+
+  const prepared = extractKeyContent(cleaned, 6000);
+  log("prepareText output length:", prepared.length);
+  return prepared;
+};
+
 async function sendFileToService(url, filePath) {
   const form = new FormData();
   form.append("file", fs.createReadStream(filePath), path.basename(filePath));
   const res = await axios.post(url, form, {
     headers: form.getHeaders(),
-    timeout: 300000, // 5 min timeout for large files
+    timeout: 600000,
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
   });
   return res.data;
 }
 
-/* ===========================================================
-   Download file from URL
-   =========================================================== */
 async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
   log("Downloading:", fileUrl);
   if (!fileUrl) throw new Error("No URL provided");
@@ -50,13 +125,7 @@ async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
   const filePath = path.join(outDir, `${prefix}_${Date.now()}${ext}`);
   const writer = fs.createWriteStream(filePath);
 
-  const response = await axios({
-    url: fileUrl,
-    method: "GET",
-    responseType: "stream",
-    timeout: 60000,
-  });
-
+  const response = await axios({ url: fileUrl, method: "GET", responseType: "stream", timeout: 60000 });
   await new Promise((resolve, reject) => {
     response.data.pipe(writer);
     writer.on("finish", resolve);
@@ -67,226 +136,85 @@ async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
   return filePath;
 }
 
-/* ===========================================================
-   Download YouTube Video
-   =========================================================== */
-async function downloadYouTubeVideo(url, outDir) {
-  log("Downloading YouTube:", url);
-  if (!ytdl.validateURL(url)) throw new Error("Invalid YouTube URL");
-  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-
-  const filePath = path.join(outDir, `youtube_${Date.now()}.mp4`);
-  const stream = ytdl(url, { quality: "highestvideo", filter: "audioandvideo" });
-  const writeStream = fs.createWriteStream(filePath);
-
-  await new Promise((resolve, reject) => {
-    stream.pipe(writeStream);
-    writeStream.on("finish", resolve);
-    writeStream.on("error", reject);
-  });
-
-  log("YouTube saved:", filePath);
-  return filePath;
+function findYtDlp() {
+  for (const cmd of [process.env.YT_DLP_PATH, "yt-dlp", "yt-dlp.exe"].filter(Boolean)) {
+    try { execFileSync(cmd, ["--version"], { stdio: "pipe" }); return cmd; } catch {}
+  }
+  throw new Error("yt-dlp not found.");
 }
 
-/* ===========================================================
-   Transcription — FastAPI first, spawnSync fallback
-   =========================================================== */
+async function downloadYouTubeVideo(url, outDir) {
+  log("Downloading YouTube via yt-dlp:", url);
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+  const ytDlp = findYtDlp();
+  const outTemplate = path.join(outDir, `youtube_${Date.now()}.%(ext)s`);
+  const args = [
+    url,
+    "--format", "18/best",
+    "--output", outTemplate,
+    "--no-playlist",
+    "--quiet",
+    "--socket-timeout", "30",
+    "--retries", "3",
+  ];
+
+  const result = spawnSync(ytDlp, args, { encoding: "utf8", timeout: 300000 });
+
+  if (result.status !== 0) {
+    throw new Error(`yt-dlp failed: ${result.stderr?.trim() || result.error?.message}`);
+  }
+
+  const files = fs.readdirSync(outDir)
+    .map(f => path.join(outDir, f))
+    .filter(f => f.includes("youtube_"));
+
+  return files[0];
+}
+
 exports.transcribe = async (filePath) => {
   log("Transcribing:", filePath);
 
-  // Try FastAPI service
+  if (groqClient) {
+    try {
+      const transcription = await groqClient.audio.transcriptions.create({
+        file: fs.createReadStream(filePath),
+        model: "whisper-large-v3-turbo",
+      });
+      return transcription.segments || [];
+    } catch {}
+  }
+
   if (TRANSCRIBE_URL) {
     try {
-      const data = await sendFileToService(TRANSCRIBE_URL, filePath);
-      log("Transcription via FastAPI:", Array.isArray(data) ? data.length : "ok");
-      return Array.isArray(data) ? data : data.transcript || [];
-    } catch (err) {
-      errLog("FastAPI transcribe failed, falling back to local:", err.message);
-    }
+      return await sendFileToService(TRANSCRIBE_URL, filePath);
+    } catch {}
   }
 
-  // Fallback: local Python script
-  try {
-    const result = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "transcriber.py"), filePath], { encoding: "utf8" });
-    if (result.error) throw new Error(result.error.message);
-    return JSON.parse(result.stdout.toString().trim() || "[]");
-  } catch (err) {
-    errLog("Local transcribe failed:", err.message);
-    return [];
-  }
+  return [];
 };
 
-/* ===========================================================
-   Frame / Slide Extraction — FastAPI first, spawnSync fallback
-   =========================================================== */
 exports.extract = async (filePath) => {
   log("Extracting frames:", filePath);
 
   if (EXTRACT_URL) {
     try {
-      const data = await sendFileToService(EXTRACT_URL, filePath);
-      log("Extraction via FastAPI:", data.frames?.length || "ok");
-      return data.frames || data;
-    } catch (err) {
-      errLog("FastAPI extract failed, falling back to local:", err.message);
-    }
+      return await sendFileToService(EXTRACT_URL, filePath);
+    } catch {}
   }
 
-  try {
-    const result = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "extractor.py"), filePath], { encoding: "utf8" });
-    if (result.error) throw new Error(result.error.message);
-    return JSON.parse(result.stdout.toString().trim() || "[]");
-  } catch (err) {
-    errLog("Local extract failed:", err.message);
-    return [];
-  }
+  return [];
 };
 
-/* ===========================================================
-   Dual Quiz Generator (Local + OpenAI structured JSON)
-   =========================================================== */
-exports.generateQuiz = async (text, numQuestions = 5) => {
-  log(`Generating quiz, text length: ${text?.length || 0}`);
-  let localQuiz = [];
-  let aiQuiz = [];
-  let aiQuizStructured = [];
-
-  // Local quiz via FastAPI or spawnSync
-  if (QUIZ_URL) {
-    try {
-      const data = await axios.post(QUIZ_URL, { text, num_questions: numQuestions }, { timeout: 120000 });
-      const result = data.data;
-      if (result.questions) {
-        localQuiz = result.questions.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q));
-      }
-      log("Quiz via FastAPI:", localQuiz.length, "questions");
-    } catch (err) {
-      errLog("FastAPI quiz failed, falling back to local:", err.message);
-    }
-  }
-
-  if (localQuiz.length === 0) {
-    try {
-      const pyRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "quiz_generator.py"), text], { encoding: "utf8" });
-      const output = pyRes.stdout?.toString().trim();
-      if (output) {
-        localQuiz = output.includes("\n") ? output.split("\n").filter((l) => l.trim()) : [output];
-      }
-    } catch (err) {
-      errLog("Local quiz failed:", err.message);
-    }
-  }
-
-  // OpenAI quiz — structured JSON output
+exports.ingestLectureText = async (lectureId, text) => {
+  if (!text?.trim()) return false;
   try {
-    if (process.env.OPENAI_API_KEY) {
-      log("Calling OpenAI for structured quiz...");
-      const completion = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: `You are an educational AI. Generate multiple-choice quizzes as JSON.
-Return ONLY a JSON object with this exact structure:
-{
-  "questions": [
-    {
-      "question": "the question text",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correctAnswer": 0
-    }
-  ]
-}
-correctAnswer is the 0-based index of the correct option. Generate exactly ${numQuestions} questions.`,
-          },
-          { role: "user", content: `Generate ${numQuestions} MCQs from this lecture content:\n${text.slice(0, 5000)}` },
-        ],
-      });
-      const raw = completion.choices?.[0]?.message?.content || "{}";
-      const parsed = JSON.parse(raw);
-      if (parsed.questions && Array.isArray(parsed.questions)) {
-        aiQuizStructured = parsed.questions;
-        const letters = ["A", "B", "C", "D"];
-        aiQuiz = parsed.questions.map((q, i) => {
-          const opts = q.options.map((o, j) => `${letters[j]}) ${o}`).join("\n");
-          return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
-        });
-      }
-      log("OpenAI structured quiz:", aiQuizStructured.length, "questions");
-    }
-  } catch (err) {
-    errLog("OpenAI quiz failed:", err.message);
-  }
-
-  return {
-    localQuiz,
-    aiQuiz,
-    mergedQuiz: [...localQuiz, "---", ...aiQuiz],
-    aiQuizStructured,
-  };
-};
-
-/* ===========================================================
-   Dual Summarization (Local + OpenAI)
-   =========================================================== */
-exports.dualSummarize = async (cleanText) => {
-  log("Summarizing, text length:", cleanText?.length || 0);
-  let localSummary = "";
-  let aiSummary = "";
-
-  // Local summarization
-  try {
-    const cleanRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanText], { encoding: "utf8" });
-    const cleaned = cleanRes.stdout?.toString() || cleanText;
-
-    const local = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "summarize.py"), cleaned], { encoding: "utf8" });
-    localSummary = local.stdout?.toString().trim() || "";
-    log("Local summary length:", localSummary.length);
-  } catch (err) {
-    errLog("Local summarize failed:", err.message);
-  }
-
-  // OpenAI summarization
-  try {
-    if (process.env.OPENAI_API_KEY) {
-      log("Calling OpenAI for summarization...");
-      const resp = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways." },
-          { role: "user", content: cleanText.slice(0, 8000) },
-        ],
-      });
-      aiSummary = resp.choices?.[0]?.message?.content || "";
-      log("OpenAI summary length:", aiSummary.length);
-    }
-  } catch (err) {
-    errLog("OpenAI summarize failed:", err.message);
-  }
-
-  return { localSummary, aiSummary };
-};
-
-/* ===========================================================
-   Prepare Inputs
-   =========================================================== */
-exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audioUrl, tmpDir }) => {
-  log("Preparing inputs:", { videoPath, audioPath, pptPath, youtubeUrl, audioUrl });
-  try {
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-
-    if (videoPath && fs.existsSync(videoPath)) return { videoPath };
-    if (youtubeUrl) return { videoPath: await downloadYouTubeVideo(youtubeUrl, tmpDir) };
-    if (audioPath && fs.existsSync(audioPath)) return { audioPath };
-    if (audioUrl) return { audioPath: await downloadFileFromUrl(audioUrl, tmpDir, "audio") };
-    if (pptPath && fs.existsSync(pptPath)) return { pptPath };
-
-    log("No valid input found");
-    return {};
-  } catch (err) {
-    errLog("prepareInputs failed:", err.message);
-    return {};
+    await axios.post(`${PYTHON_AI_URL}/ingest-text`, {
+      document_id: `lecture_${lectureId}`,
+      text,
+    });
+    return true;
+  } catch {
+    return false;
   }
 };
