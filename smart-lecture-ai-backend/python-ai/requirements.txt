@@ -4,6 +4,7 @@ python-multipart
 
 moviepy
 pydub
+imageio-ffmpeg
 
 faster-whisper
 

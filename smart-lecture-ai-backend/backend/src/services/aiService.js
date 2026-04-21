@@ -22,6 +22,7 @@ const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GRO
 
 const log = (...msg) => console.log("[aiService]", ...msg);
 const errLog = (...msg) => console.error("[aiService]", ...msg);
+const GROQ_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 
 function axiosErrorDetail(err) {
   const detail = err.response?.data?.detail || err.response?.data?.error || err.response?.data;
@@ -143,6 +144,51 @@ function findYtDlp() {
   throw new Error("yt-dlp not found.");
 }
 
+function findFfmpeg() {
+  for (const cmd of [process.env.FFMPEG_PATH, "ffmpeg", "ffmpeg.exe"].filter(Boolean)) {
+    try { execFileSync(cmd, ["-version"], { stdio: "pipe" }); return cmd; } catch {}
+  }
+  try {
+    const bundled = execFileSync(
+      PYTHON_VENV_PATH,
+      ["-c", "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"],
+      { encoding: "utf8", stdio: "pipe" }
+    ).trim();
+    if (bundled && fs.existsSync(bundled)) return bundled;
+  } catch {}
+  return null;
+}
+
+function prepareWhisperFile(filePath) {
+  const size = fs.statSync(filePath).size;
+  if (size <= GROQ_MAX_UPLOAD_BYTES && ![".mp4", ".mkv", ".webm", ".mov", ".avi"].includes(path.extname(filePath).toLowerCase())) {
+    return { filePath, cleanupPath: null };
+  }
+
+  const ffmpeg = findFfmpeg();
+  if (!ffmpeg) return { filePath, cleanupPath: null };
+
+  const outPath = path.join(path.dirname(filePath), `whisper_${Date.now()}.mp3`);
+  const result = spawnSync(ffmpeg, [
+    "-y",
+    "-i", filePath,
+    "-vn",
+    "-ac", "1",
+    "-ar", "16000",
+    "-b:a", "32k",
+    outPath,
+  ], { encoding: "utf8", timeout: 300000 });
+
+  if (result.status !== 0 || !fs.existsSync(outPath)) {
+    errLog("ffmpeg audio compression failed:", result.stderr?.trim() || result.error?.message || "unknown");
+    return { filePath, cleanupPath: null };
+  }
+
+  const compressedSize = fs.statSync(outPath).size;
+  log(`Compressed audio for Whisper: ${Math.round(size / 1024 / 1024)}MB -> ${Math.round(compressedSize / 1024 / 1024)}MB`);
+  return { filePath: outPath, cleanupPath: outPath };
+}
+
 async function downloadYouTubeVideo(url, outDir) {
   log("Downloading YouTube via yt-dlp:", url);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -172,23 +218,45 @@ async function downloadYouTubeVideo(url, outDir) {
   return files[0];
 }
 
+function normalizeTranscript(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.transcript)) return data.transcript;
+  if (Array.isArray(data?.segments)) return data.segments;
+  if (typeof data?.text === "string" && data.text.trim()) {
+    return [{ start: 0, end: 0, text: data.text.trim() }];
+  }
+  return [];
+}
+
 exports.transcribe = async (filePath) => {
   log("Transcribing:", filePath);
 
   if (groqClient) {
+    const whisperFile = prepareWhisperFile(filePath);
     try {
       const transcription = await groqClient.audio.transcriptions.create({
-        file: fs.createReadStream(filePath),
+        file: fs.createReadStream(whisperFile.filePath),
         model: "whisper-large-v3-turbo",
+        response_format: "verbose_json",
+        timestamp_granularities: ["segment"],
       });
-      return transcription.segments || [];
-    } catch {}
+      return normalizeTranscript(transcription);
+    } catch (err) {
+      errLog("Groq Whisper failed:", err.message);
+    } finally {
+      if (whisperFile.cleanupPath) {
+        fs.rmSync(whisperFile.cleanupPath, { force: true });
+      }
+    }
   }
 
   if (TRANSCRIBE_URL) {
     try {
-      return await sendFileToService(TRANSCRIBE_URL, filePath);
-    } catch {}
+      const data = await sendFileToService(TRANSCRIBE_URL, filePath);
+      return normalizeTranscript(data);
+    } catch (err) {
+      errLog("FastAPI transcribe failed:", err.message);
+    }
   }
 
   return [];
@@ -199,8 +267,11 @@ exports.extract = async (filePath) => {
 
   if (EXTRACT_URL) {
     try {
-      return await sendFileToService(EXTRACT_URL, filePath);
-    } catch {}
+      const data = await sendFileToService(EXTRACT_URL, filePath);
+      return Array.isArray(data) ? data : data.frames || [];
+    } catch (err) {
+      errLog("FastAPI extract failed:", err.message);
+    }
   }
 
   return [];
@@ -216,5 +287,158 @@ exports.ingestLectureText = async (lectureId, text) => {
     return true;
   } catch {
     return false;
+  }
+};
+
+async function queryVectors(documentId, query, topK = 5) {
+  try {
+    const resp = await axios.post(
+      `${PYTHON_AI_URL}/query-document`,
+      { document_id: documentId, query, top_k: topK },
+      { timeout: 15000 }
+    );
+    return resp.data.chunks || [];
+  } catch (err) {
+    errLog(`Vector query failed for ${documentId}:`, axiosErrorDetail(err));
+    return [];
+  }
+}
+
+exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = {}) => {
+  log("Summarizing, text length:", cleanText?.length || 0);
+  let localSummary = "";
+  let aiSummary = "";
+  let semanticContext = "";
+
+  if (lectureId) {
+    const allChunks = [];
+    for (const q of ["main topics and key concepts", "important definitions and explanations", "examples and applications"]) {
+      allChunks.push(...await queryVectors(`lecture_${lectureId}`, q, 4));
+    }
+    for (const bookId of bookDocumentIds) {
+      allChunks.push(...await queryVectors(bookId, "relevant theory and concepts", 3));
+    }
+
+    const seen = new Set();
+    const unique = allChunks.filter((c) => {
+      const key = `${c.chunk_index ?? c.text?.slice(0, 40)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (unique.length > 0) {
+      semanticContext = unique.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
+      log(`Summary semantic context: ${unique.length} chunks`);
+    }
+  }
+
+  if (!semanticContext && SUMMARIZE_URL) {
+    try {
+      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
+      localSummary = res.data?.summary || "";
+    } catch (err) {
+      errLog("FastAPI summarize failed:", err.message);
+    }
+  }
+
+  try {
+    const content = semanticContext || cleanText;
+    const systemPrompt = semanticContext
+      ? "You are an expert educational AI. Generate a clear lecture summary with sections: Overview, Key Concepts, Important Details, Takeaways."
+      : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways.";
+    aiSummary = await geminiChat(systemPrompt, content, { maxTokens: 4096, temperature: 0.3 });
+  } catch (err) {
+    errLog("LLM summarize failed:", err.message);
+  }
+
+  return { localSummary, aiSummary };
+};
+
+exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentIds = [] } = {}) => {
+  log("Generating quiz, text length:", text?.length || 0);
+  let localQuiz = [];
+  let aiQuiz = [];
+  let aiQuizStructured = [];
+  let semanticContext = "";
+
+  if (lectureId) {
+    const allChunks = [];
+    allChunks.push(...await queryVectors(`lecture_${lectureId}`, "key concepts definitions examples", 6));
+    for (const bookId of bookDocumentIds) {
+      allChunks.push(...await queryVectors(bookId, "key concepts definitions", 3));
+    }
+    if (allChunks.length > 0) {
+      semanticContext = allChunks.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
+    }
+  }
+
+  const quizContent = semanticContext || text;
+
+  if (QUIZ_URL) {
+    try {
+      const res = await axios.post(
+        QUIZ_URL,
+        { text: quizContent, num_questions: numQuestions },
+        { timeout: 300000 }
+      );
+      if (Array.isArray(res.data?.structured)) {
+        aiQuizStructured = res.data.structured;
+      }
+      if (Array.isArray(res.data?.questions)) {
+        localQuiz = res.data.questions.map((q) => typeof q === "string" ? q : q.question || JSON.stringify(q));
+      }
+    } catch (err) {
+      errLog("FastAPI quiz failed:", err.message);
+    }
+  }
+
+  try {
+    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
+Return ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
+correctAnswer is a 0-based index. Generate exactly ${numQuestions} questions.`;
+    const parsed = await geminiJSON(systemPrompt, `Generate ${numQuestions} MCQs from:\n${quizContent}`);
+
+    if (Array.isArray(parsed.questions)) {
+      aiQuizStructured = parsed.questions;
+      const letters = ["A", "B", "C", "D"];
+      aiQuiz = parsed.questions.map((q, i) => {
+        const opts = (q.options || []).map((o, j) => `${letters[j]}) ${o}`).join("\n");
+        return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
+      });
+    }
+  } catch (err) {
+    errLog("LLM quiz failed:", err.message);
+  }
+
+  return {
+    localQuiz,
+    aiQuiz,
+    mergedQuiz: [...localQuiz, "---", ...aiQuiz],
+    aiQuizStructured,
+  };
+};
+
+exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audioUrl, tmpDir }) => {
+  log("Preparing inputs:", { videoPath, audioPath, pptPath, youtubeUrl, audioUrl });
+  try {
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+    if (videoPath && fs.existsSync(videoPath)) return { videoPath, cleanupPaths: [] };
+    if (youtubeUrl) {
+      const downloaded = await downloadYouTubeVideo(youtubeUrl, tmpDir);
+      return { videoPath: downloaded, cleanupPaths: [downloaded] };
+    }
+    if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
+    if (audioUrl) {
+      const downloaded = await downloadFileFromUrl(audioUrl, tmpDir, "audio");
+      return { audioPath: downloaded, cleanupPaths: [downloaded] };
+    }
+    if (pptPath && fs.existsSync(pptPath)) return { pptPath, cleanupPaths: [] };
+
+    return { cleanupPaths: [] };
+  } catch (err) {
+    errLog("prepareInputs failed:", err.message);
+    return { cleanupPaths: [] };
   }
 };
