@@ -138,8 +138,7 @@ async def extract(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Frame extraction failed: {e}")
     finally:
-        if target.exists():
-            target.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
 
 
 @app.post("/quiz")
