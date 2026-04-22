@@ -5,16 +5,13 @@ const path = require("path");
 const axios = require("axios");
 const { spawnSync, execFileSync } = require("child_process");
 const FormData = require("form-data");
+const Groq = require("groq-sdk");
 const { geminiChat, geminiJSON } = require("./gemini");
 
-// Python paths — used as fallback when FastAPI is unavailable
+// ── Python / FastAPI config ──
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
 const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
-
-// FastAPI service base URL (for vector store + direct endpoints)
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
-
-// FastAPI service URLs (preferred)
 const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
 const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
 const QUIZ_URL = process.env.QUIZ_SERVICE_URL || null;
@@ -22,12 +19,14 @@ const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
 const CLEAN_URL = process.env.CLEAN_SERVICE_URL
   || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
 
+// ── Groq client (for Whisper + LLM fallback) ──
+const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
+
 const log = (...msg) => console.log("[aiService]", ...msg);
 const errLog = (...msg) => console.error("[aiService]", ...msg);
 
 /* ===========================================================
    Text preparation — clean + extract key sentences
-   Reduces token count before sending to AI models
    =========================================================== */
 const STOP_WORDS = new Set([
   "the","a","an","and","or","but","in","on","at","to","for","of","with",
@@ -45,7 +44,6 @@ function extractKeyContent(text, maxChars = 6000) {
 
   if (!sentences.length) return text.slice(0, maxChars);
 
-  // Tokenize once per sentence, build freq map and scores in one pass
   const wordFreq = {};
   const tokenized = sentences.map(s => {
     const words = s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/)
@@ -78,22 +76,18 @@ exports.prepareText = async (rawText) => {
 
   let cleaned = rawText;
 
-  // Try FastAPI cleaner first
   if (CLEAN_URL) {
     try {
       const res = await axios.post(CLEAN_URL, { text: rawText }, { timeout: 60000 });
       cleaned = res.data?.text || rawText;
-      log("FastAPI cleaner output length:", cleaned.length);
     } catch (err) {
       errLog("FastAPI clean failed, using raw text:", err.message);
     }
   } else {
-    // Local cleaner via spawnSync
     const cleanTmp = path.join(os.tmpdir(), `lns_prep_${Date.now()}.txt`);
     try {
       fs.writeFileSync(cleanTmp, rawText, "utf8");
       const res = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanTmp], { encoding: "utf8" });
-      if (res.status !== 0) errLog("cleaner.py stderr:", res.stderr);
       cleaned = res.stdout?.toString().trim() || rawText;
     } catch (err) {
       errLog("Local clean failed:", err.message);
@@ -102,21 +96,20 @@ exports.prepareText = async (rawText) => {
     }
   }
 
-  // Extract key sentences and cap length
   const prepared = extractKeyContent(cleaned, 6000);
-  log("prepareText output length:", prepared.length, `(saved ~${rawText.length - prepared.length} chars)`);
+  log("prepareText output length:", prepared.length);
   return prepared;
 };
 
 /* ===========================================================
-   Helper: send file to FastAPI endpoint via multipart upload
+   Helper: send file to FastAPI endpoint
    =========================================================== */
 async function sendFileToService(url, filePath) {
   const form = new FormData();
   form.append("file", fs.createReadStream(filePath), path.basename(filePath));
   const res = await axios.post(url, form, {
     headers: form.getHeaders(),
-    timeout: 300000, // 5 min timeout for large files
+    timeout: 600000,
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
   });
@@ -124,7 +117,7 @@ async function sendFileToService(url, filePath) {
 }
 
 /* ===========================================================
-   Download file from URL
+   Download from URL
    =========================================================== */
 async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
   log("Downloading:", fileUrl);
@@ -135,13 +128,7 @@ async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
   const filePath = path.join(outDir, `${prefix}_${Date.now()}${ext}`);
   const writer = fs.createWriteStream(filePath);
 
-  const response = await axios({
-    url: fileUrl,
-    method: "GET",
-    responseType: "stream",
-    timeout: 60000,
-  });
-
+  const response = await axios({ url: fileUrl, method: "GET", responseType: "stream", timeout: 60000 });
   await new Promise((resolve, reject) => {
     response.data.pipe(writer);
     writer.on("finish", resolve);
@@ -153,25 +140,13 @@ async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
 }
 
 /* ===========================================================
-   Download YouTube Video via yt-dlp (reliable, actively maintained)
+   Download YouTube via yt-dlp
    =========================================================== */
 function findYtDlp() {
-  // Prefer project-local or venv yt-dlp, fall back to system PATH
-  const candidates = [
-    process.env.YT_DLP_PATH,
-    "yt-dlp",
-    "yt-dlp.exe",
-  ].filter(Boolean);
-
-  for (const cmd of candidates) {
-    try {
-      execFileSync(cmd, ["--version"], { stdio: "pipe" });
-      return cmd;
-    } catch {
-      // not found, try next
-    }
+  for (const cmd of [process.env.YT_DLP_PATH, "yt-dlp", "yt-dlp.exe"].filter(Boolean)) {
+    try { execFileSync(cmd, ["--version"], { stdio: "pipe" }); return cmd; } catch {}
   }
-  throw new Error("yt-dlp not found. Install it: https://github.com/yt-dlp/yt-dlp#installation");
+  throw new Error("yt-dlp not found. Install: https://github.com/yt-dlp/yt-dlp#installation");
 }
 
 async function downloadYouTubeVideo(url, outDir) {
@@ -181,55 +156,68 @@ async function downloadYouTubeVideo(url, outDir) {
   const ytDlp = findYtDlp();
   const outTemplate = path.join(outDir, `youtube_${Date.now()}.%(ext)s`);
 
-  // Download best audio only — sufficient for transcription, much smaller than video
-  const args = [
+  const result = spawnSync(ytDlp, [
     url,
     "--format", "bestaudio/best",
     "--output", outTemplate,
-    "--no-playlist",
-    "--no-warnings",
-    "--no-update",
-    "--quiet",
-  ];
+    "--no-playlist", "--no-warnings", "--no-update", "--quiet",
+  ], { encoding: "utf8", timeout: 300000 });
 
-  log("yt-dlp args:", args.join(" "));
-
-  const result = spawnSync(ytDlp, args, { encoding: "utf8", timeout: 300000 });
   if (result.status !== 0) {
-    const stderr = result.stderr?.trim() || result.error?.message || "unknown error";
-    throw new Error(`yt-dlp failed: ${stderr}`);
+    throw new Error(`yt-dlp failed: ${result.stderr?.trim() || result.error?.message || "unknown"}`);
   }
 
-  // Find the downloaded file (extension varies: webm, m4a, opus, mp3…)
   const files = fs.readdirSync(outDir)
-    .map((f) => path.join(outDir, f))
-    .filter((f) => f.includes("youtube_") && fs.statSync(f).isFile())
+    .map(f => path.join(outDir, f))
+    .filter(f => f.includes("youtube_") && fs.statSync(f).isFile())
     .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
 
   if (!files.length) throw new Error("yt-dlp ran but no output file found");
-
   log("YouTube saved:", files[0]);
   return files[0];
 }
 
 /* ===========================================================
-   Transcription — FastAPI first, spawnSync fallback
+   Transcription
+   Priority: Groq Whisper API → FastAPI local Whisper → spawnSync
    =========================================================== */
 exports.transcribe = async (filePath) => {
   log("Transcribing:", filePath);
 
-  // Try FastAPI service
+  // ── 1. Groq Whisper API (~10s for a full lecture, free) ──
+  if (groqClient) {
+    try {
+      log("Transcribing via Groq Whisper API...");
+      const transcription = await groqClient.audio.transcriptions.create({
+        file: fs.createReadStream(filePath),
+        model: "whisper-large-v3-turbo",
+        response_format: "verbose_json",
+        timestamp_granularities: ["segment"],
+      });
+
+      const segments = (transcription.segments || [])
+        .filter(s => s.text?.trim())
+        .map(s => ({ start: round2(s.start), end: round2(s.end), text: s.text.trim() }));
+
+      log(`Groq Whisper: ${segments.length} segments`);
+      if (segments.length > 0) return segments;
+    } catch (err) {
+      errLog("Groq Whisper failed, falling back:", err.message);
+    }
+  }
+
+  // ── 2. FastAPI local Whisper ──
   if (TRANSCRIBE_URL) {
     try {
       const data = await sendFileToService(TRANSCRIBE_URL, filePath);
       log("Transcription via FastAPI:", Array.isArray(data) ? data.length : "ok");
       return Array.isArray(data) ? data : data.transcript || [];
     } catch (err) {
-      errLog("FastAPI transcribe failed, falling back to local:", err.message, err.code || "", err.response?.data?.detail || "");
+      errLog("FastAPI transcribe failed, falling back to local:", err.message, err.code || "");
     }
   }
 
-  // Fallback: local Python script
+  // ── 3. Local spawnSync fallback ──
   try {
     const result = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "transcriber.py"), filePath], { encoding: "utf8" });
     if (result.error) throw new Error(result.error.message);
@@ -240,8 +228,10 @@ exports.transcribe = async (filePath) => {
   }
 };
 
+function round2(n) { return Math.round(n * 100) / 100; }
+
 /* ===========================================================
-   Frame / Slide Extraction — FastAPI first, spawnSync fallback
+   Frame / Slide Extraction
    =========================================================== */
 exports.extract = async (filePath) => {
   log("Extracting frames:", filePath);
@@ -300,7 +290,7 @@ exports.ingestLectureText = async (lectureId, text) => {
 };
 
 /* ===========================================================
-   Dual Quiz Generator (Local + OpenAI structured JSON)
+   Quiz Generation (Gemini/Groq LLM + local Flan-T5)
    =========================================================== */
 exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentIds = [] } = {}) => {
   log(`Generating quiz, text length: ${text?.length || 0}`);
@@ -315,8 +305,7 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
     const lectureChunks = await queryVectors(`lecture_${lectureId}`, "key concepts definitions examples", 6);
     allChunks.push(...lectureChunks);
     for (const bookId of bookDocumentIds) {
-      const bookChunks = await queryVectors(bookId, "key concepts definitions", 3);
-      allChunks.push(...bookChunks);
+      allChunks.push(...await queryVectors(bookId, "key concepts definitions", 3));
     }
     if (allChunks.length > 0) {
       semanticContext = allChunks.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
@@ -326,82 +315,42 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
 
   const quizContent = semanticContext || text;
 
-  // Local quiz via FastAPI or spawnSync
+  // ── Local Flan-T5 quiz via FastAPI ──
   let localQuizStructured = [];
   if (QUIZ_URL) {
     try {
       const data = await axios.post(QUIZ_URL, { text: quizContent, num_questions: numQuestions }, { timeout: 120000 });
       const result = data.data;
-      // Use new structured MCQ format from Flan-T5 when available
-      if (result.structured && Array.isArray(result.structured)) {
-        localQuizStructured = result.structured;
-        log("Quiz via FastAPI (structured):", localQuizStructured.length, "MCQs");
-      }
-      if (result.questions) {
-        localQuiz = result.questions.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q));
-      }
+      if (result.structured && Array.isArray(result.structured)) localQuizStructured = result.structured;
+      if (result.questions) localQuiz = result.questions.map(q => typeof q === "string" ? q : q.question || JSON.stringify(q));
       log("Quiz via FastAPI:", localQuiz.length, "questions");
     } catch (err) {
-      errLog("FastAPI quiz failed (skipping local fallback, relying on OpenAI):", err.message);
-    }
-  } else {
-    // Local quiz only when FastAPI is not configured
-    const quizTmp = path.join(os.tmpdir(), `lns_quiz_${Date.now()}.txt`);
-    try {
-      fs.writeFileSync(quizTmp, text, "utf8");
-      const pyRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "quiz_generator.py"), quizTmp], { encoding: "utf8" });
-      if (pyRes.status !== 0) errLog("quiz_generator.py stderr:", pyRes.stderr);
-      const output = pyRes.stdout?.toString().trim();
-      if (output) {
-        localQuiz = output.includes("\n") ? output.split("\n").filter((l) => l.trim()) : [output];
-      }
-    } catch (err) {
-      errLog("Local quiz failed:", err.message);
-    } finally {
-      fs.rmSync(quizTmp, { force: true });
+      errLog("FastAPI quiz failed:", err.message);
     }
   }
 
-  // Gemini quiz — structured JSON output
+  // ── Gemini/Groq structured quiz ──
   try {
-    if (process.env.GEMINI_API_KEY) {
-      log("Calling Gemini 2.0 Flash for structured quiz...");
+    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
+Return ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
+correctAnswer is 0-based index. Generate exactly ${numQuestions} questions.
+Make questions test understanding. Each option should be plausible. Avoid "All of the above".`;
 
-      const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
-Return ONLY a JSON object with this exact structure:
-{
-  "questions": [
-    {
-      "question": "the question text",
-      "options": ["option A", "option B", "option C", "option D"],
-      "correctAnswer": 0
-    }
-  ]
-}
-correctAnswer is the 0-based index of the correct option. Generate exactly ${numQuestions} questions.
-Make questions educational, clear, and test understanding — not just recall.
-Each option should be plausible. Avoid "All of the above" or "None of the above".`;
+    const parsed = await geminiJSON(systemPrompt, `Generate ${numQuestions} MCQs from:\n${quizContent}`);
 
-      const parsed = await geminiJSON(
-        systemPrompt,
-        `Generate ${numQuestions} MCQs from this lecture content:\n${quizContent}`
-      );
-
-      if (parsed.questions && Array.isArray(parsed.questions)) {
-        aiQuizStructured = parsed.questions;
-        const letters = ["A", "B", "C", "D"];
-        aiQuiz = parsed.questions.map((q, i) => {
-          const opts = q.options.map((o, j) => `${letters[j]}) ${o}`).join("\n");
-          return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
-        });
-      }
-      log("Gemini structured quiz:", aiQuizStructured.length, "questions");
+    if (parsed.questions && Array.isArray(parsed.questions)) {
+      aiQuizStructured = parsed.questions;
+      const letters = ["A", "B", "C", "D"];
+      aiQuiz = parsed.questions.map((q, i) => {
+        const opts = q.options.map((o, j) => `${letters[j]}) ${o}`).join("\n");
+        return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
+      });
+      log("LLM structured quiz:", aiQuizStructured.length, "questions");
     }
   } catch (err) {
-    errLog("Gemini quiz failed:", err.message);
+    errLog("LLM quiz failed:", err.message);
   }
 
-  // Use OpenAI structured quiz if available, otherwise fall back to Flan-T5 structured
   const finalStructured = aiQuizStructured.length > 0 ? aiQuizStructured : localQuizStructured;
 
   return {
@@ -413,7 +362,7 @@ Each option should be plausible. Avoid "All of the above" or "None of the above"
 };
 
 /* ===========================================================
-   Dual Summarization (Local + OpenAI)
+   Summarization (Gemini/Groq LLM + local BART)
    =========================================================== */
 exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = {}) => {
   log("Summarizing, text length:", cleanText?.length || 0);
@@ -424,80 +373,47 @@ exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = 
   let semanticContext = "";
   if (lectureId) {
     const allChunks = [];
-    const queries = ["main topics and key concepts", "important definitions and explanations", "examples and applications"];
-    for (const q of queries) {
-      const chunks = await queryVectors(`lecture_${lectureId}`, q, 4);
-      allChunks.push(...chunks);
+    for (const q of ["main topics and key concepts", "important definitions and explanations", "examples and applications"]) {
+      allChunks.push(...await queryVectors(`lecture_${lectureId}`, q, 4));
     }
     for (const bookId of bookDocumentIds) {
-      const chunks = await queryVectors(bookId, "relevant theory and concepts", 3);
-      allChunks.push(...chunks);
+      allChunks.push(...await queryVectors(bookId, "relevant theory and concepts", 3));
     }
-    // Deduplicate by chunk_index
     const seen = new Set();
-    const unique = allChunks.filter((c) => {
+    const unique = allChunks.filter(c => {
       const key = `${c.chunk_index ?? c.text?.slice(0, 40)}`;
       if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+      seen.add(key); return true;
     });
     if (unique.length > 0) {
       semanticContext = unique.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
-      log(`Summary semantic context: ${unique.length} chunks (lecture + ${bookDocumentIds.length} books)`);
+      log(`Summary semantic context: ${unique.length} chunks`);
     }
   }
 
-  // ── Local BART summarization (only when no semantic context available) ──
-  if (!semanticContext) {
-    if (SUMMARIZE_URL) {
-      try {
-        const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
-        localSummary = res.data?.summary || "";
-        log("FastAPI summary length:", localSummary.length);
-      } catch (err) {
-        errLog("FastAPI summarize failed (skipping local fallback, relying on OpenAI):", err.message);
-      }
-    } else {
-      const cleanTmp = path.join(os.tmpdir(), `lns_clean_${Date.now()}.txt`);
-      const summTmp = path.join(os.tmpdir(), `lns_summ_${Date.now()}.txt`);
-      try {
-        fs.writeFileSync(cleanTmp, cleanText, "utf8");
-        const cleanRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanTmp], { encoding: "utf8" });
-        if (cleanRes.status !== 0) errLog("cleaner.py stderr:", cleanRes.stderr);
-        const cleaned = cleanRes.stdout?.toString().trim() || cleanText;
-
-        fs.writeFileSync(summTmp, cleaned, "utf8");
-        const local = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "summarize.py"), summTmp], { encoding: "utf8" });
-        if (local.status !== 0) errLog("summarize.py stderr:", local.stderr);
-        localSummary = local.stdout?.toString().trim() || "";
-        log("Local summary length:", localSummary.length);
-      } catch (err) {
-        errLog("Local summarize failed:", err.message);
-      } finally {
-        fs.rmSync(cleanTmp, { force: true });
-        fs.rmSync(summTmp, { force: true });
-      }
+  // ── Local BART (only when no semantic context) ──
+  if (!semanticContext && SUMMARIZE_URL) {
+    try {
+      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
+      localSummary = res.data?.summary || "";
+      log("FastAPI summary length:", localSummary.length);
+    } catch (err) {
+      errLog("FastAPI summarize failed:", err.message);
     }
   }
 
-  // ── Gemini summarization — uses semantic context when available ──
+  // ── Gemini/Groq summary ──
   try {
-    if (process.env.GEMINI_API_KEY) {
-      log("Calling Gemini 2.0 Flash for summarization...");
-      const contentToSummarize = semanticContext || cleanText;
-      const hasBooks = bookDocumentIds?.length > 0;
-      const systemPrompt = semanticContext
-        ? `You are an expert educational AI. Generate a comprehensive, well-structured summary from the lecture content${hasBooks ? " and supplementary book material" : ""} provided below. Use this format:\n\n## Overview\nA brief 2-3 sentence overview of the lecture topic.\n\n## Key Concepts\nBulleted list of the most important concepts covered.\n\n## Important Details\nDetailed explanations of complex topics, formulas, or processes.\n\n## Takeaways\nWhat students should remember and be able to apply.\n\nBe concise, clear, and educational. Use simple language. Avoid filler words.`
-        : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways. Use markdown formatting with headers.";
+    const contentToSummarize = semanticContext || cleanText;
+    const hasBooks = bookDocumentIds?.length > 0;
+    const systemPrompt = semanticContext
+      ? `You are an expert educational AI. Generate a comprehensive, well-structured summary from the lecture content${hasBooks ? " and supplementary book material" : ""}. Use this format:\n\n## Overview\n## Key Concepts\n## Important Details\n## Takeaways\n\nBe concise, clear, and educational.`
+      : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways. Use markdown formatting with headers.";
 
-      aiSummary = await geminiChat(systemPrompt, contentToSummarize, {
-        maxTokens: 4096,
-        temperature: 0.3,
-      });
-      log("Gemini summary length:", aiSummary.length);
-    }
+    aiSummary = await geminiChat(systemPrompt, contentToSummarize, { maxTokens: 4096, temperature: 0.3 });
+    log("LLM summary length:", aiSummary.length);
   } catch (err) {
-    errLog("Gemini summarize failed:", err.message);
+    errLog("LLM summarize failed:", err.message);
   }
 
   return { localSummary, aiSummary };
@@ -513,13 +429,13 @@ exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audi
 
     if (videoPath && fs.existsSync(videoPath)) return { videoPath, cleanupPaths: [] };
     if (youtubeUrl) {
-      const downloadedVideoPath = await downloadYouTubeVideo(youtubeUrl, tmpDir);
-      return { videoPath: downloadedVideoPath, cleanupPaths: [downloadedVideoPath] };
+      const downloaded = await downloadYouTubeVideo(youtubeUrl, tmpDir);
+      return { videoPath: downloaded, cleanupPaths: [downloaded] };
     }
     if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
     if (audioUrl) {
-      const downloadedAudioPath = await downloadFileFromUrl(audioUrl, tmpDir, "audio");
-      return { audioPath: downloadedAudioPath, cleanupPaths: [downloadedAudioPath] };
+      const downloaded = await downloadFileFromUrl(audioUrl, tmpDir, "audio");
+      return { audioPath: downloaded, cleanupPaths: [downloaded] };
     }
     if (pptPath && fs.existsSync(pptPath)) return { pptPath, cleanupPaths: [] };
 
