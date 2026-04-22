@@ -45,7 +45,7 @@ def transcribe_audio(audio_path, model_path=None):
 
     segments, info = model.transcribe(
         audio_path,
-        beam_size=5,
+        beam_size=1,
         vad_filter=True,           # skip silence automatically
         vad_parameters={"min_silence_duration_ms": 500},
     )
