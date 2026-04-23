@@ -12,12 +12,11 @@ const { geminiChat, geminiJSON } = require("./gemini");
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
 const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
-const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
-const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
-const QUIZ_URL = process.env.QUIZ_SERVICE_URL || null;
-const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
-const CLEAN_URL = process.env.CLEAN_SERVICE_URL
-  || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
+const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || `${PYTHON_AI_URL}/transcribe`;
+const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || `${PYTHON_AI_URL}/extract`;
+const QUIZ_URL = process.env.QUIZ_SERVICE_URL || `${PYTHON_AI_URL}/quiz`;
+const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || `${PYTHON_AI_URL}/summarize`;
+const CLEAN_URL = process.env.CLEAN_SERVICE_URL || `${PYTHON_AI_URL}/clean`;
 
 // ── Groq client (for Whisper + LLM fallback) ──
 const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;

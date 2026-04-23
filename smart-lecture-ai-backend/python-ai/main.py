@@ -45,6 +45,15 @@ except Exception as _e:
     summarize_text = None
     print(f"[main] WARNING: summarize import failed: {_e}", file=sys.stderr)
 
+try:
+    from vector_store import ingest, query as vs_query, collection_exists
+    from document_processor import DocumentProcessor
+    VECTOR_STORE_AVAILABLE = True
+except Exception as _e:
+    ingest = vs_query = collection_exists = None
+    VECTOR_STORE_AVAILABLE = False
+    print(f"[main] WARNING: vector_store import failed: {_e}", file=sys.stderr)
+
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -188,6 +197,52 @@ async def summarize(payload: dict):
         return {"summary": summary}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Summarization failed: {e}")
+
+
+@app.post("/ingest-text")
+async def ingest_text(payload: dict):
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Vector store unavailable")
+
+    document_id = payload.get("document_id", "")
+    text = payload.get("text", "")
+    title = payload.get("title", document_id)
+
+    if not document_id or not text:
+        raise HTTPException(status_code=400, detail="`document_id` and `text` are required")
+
+    def _run():
+        from document_processor import chunk_text
+        chunks = chunk_text(text, chunk_size=400, overlap=50)
+        return ingest(document_id, chunks, {"title": title})
+
+    try:
+        count = await asyncio.to_thread(_run)
+        return {"ok": True, "chunks_stored": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ingest failed: {e}")
+
+
+@app.post("/query-document")
+async def query_document(payload: dict):
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Vector store unavailable")
+
+    document_id = payload.get("document_id", "")
+    query_text = payload.get("query", "")
+    top_k = int(payload.get("top_k", 5))
+
+    if not document_id or not query_text:
+        raise HTTPException(status_code=400, detail="`document_id` and `query` are required")
+
+    try:
+        chunks = await asyncio.to_thread(vs_query, document_id, query_text, top_k)
+        return {"chunks": chunks}
+    except ValueError as e:
+        # Document not yet ingested — return empty rather than 500
+        return {"chunks": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query failed: {e}")
 
 
 if __name__ == "__main__":

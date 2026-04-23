@@ -57,8 +57,8 @@ def chunk_sentences(text: str, max_chars=2000):
     sentences = sent_tokenize(text)
     chunks, current = [], ""
     for sent in sentences:
-        if len(current) + len(sent) < max_chars:
-            current += " " + sent
+        if not current or len(current) + 1 + len(sent) <= max_chars:
+            current += (" " if current else "") + sent
         else:
             chunks.append(current.strip())
             current = sent
