@@ -9,7 +9,7 @@ const Groq = require("groq-sdk");
 const { geminiChat, geminiJSON } = require("./gemini");
 
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
-const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
+const AI_MODELS_DIR = path.join(__dirname, "../ ai_models");
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
 const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
 const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
