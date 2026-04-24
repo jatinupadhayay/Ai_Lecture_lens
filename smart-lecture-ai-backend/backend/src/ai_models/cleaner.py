@@ -59,7 +59,6 @@ def clean_text(text: str) -> str:
     return cleaned_text.strip()
 
 
-# -------------------- OPTIONAL AI CLEANER --------------------
 def clean_text_with_optional_ai(text: str, use_ai: bool = False) -> str:
     """
     Optionally refines transcript text with a Hugging Face summarization model.

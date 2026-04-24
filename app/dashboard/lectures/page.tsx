@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { useAppStore } from "@/lib/store"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import type { Lecture } from "@/lib/types"
+import { fmtDateShort, getLectureStatusStyle } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -16,161 +17,273 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { useRouter } from "next/navigation"
 import {
-  Plus,
-  PlayCircle,
-  FileText,
+  AudioLines,
+  BookOpen,
   Brain,
   Calendar,
   ExternalLink,
-  Presentation,
-  Video,
-  AudioLines,
+  FileText,
   Loader2,
+  PlayCircle,
+  Plus,
+  Presentation,
   Upload,
+  Video,
+  BookMarked,
 } from "lucide-react"
 
 export default function LecturesPage() {
   const router = useRouter()
   const { lectures, uploadLecture, fetchLectures } = useAppStore()
-
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
-
-  const [newLecture, setNewLecture] = useState({
+  const [open, setOpen] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [form, setForm] = useState({
     title: "",
     url: "",
     pptFile: null as File | null,
     audioFile: null as File | null,
     videoFile: null as File | null,
+    bookFiles: [] as File[],
   })
 
   useEffect(() => {
     fetchLectures()
   }, [fetchLectures])
 
-  const handleAddLecture = async () => {
-    if (!newLecture.title) return
-    if (!newLecture.url && !newLecture.videoFile && !newLecture.audioFile && !newLecture.pptFile) {
-      toast.error("Please provide a YouTube URL or upload at least one file.")
+  const handleUpload = async () => {
+    if (!form.title.trim()) return
+
+    if (!form.url && !form.videoFile && !form.audioFile && !form.pptFile) {
+      toast.error("Provide a YouTube URL or upload at least one file.")
       return
     }
 
-    setIsUploading(true)
+    setUploading(true)
+
     try {
-      await uploadLecture({
-        title: newLecture.title,
-        youtubeUrl: newLecture.url || "",
-        pptFile: newLecture.pptFile,
-        audioFile: newLecture.audioFile,
-        videoFile: newLecture.videoFile,
+      const result = await uploadLecture({
+        title: form.title.trim(),
+        youtubeUrl: form.url.trim(),
+        pptFile: form.pptFile,
+        audioFile: form.audioFile,
+        videoFile: form.videoFile,
+        bookFiles: form.bookFiles,
       })
-      setNewLecture({ title: "", url: "", pptFile: null, audioFile: null, videoFile: null })
-      setIsDialogOpen(false)
-      toast.success("Lecture uploaded successfully")
+
+      setForm({
+        title: "",
+        url: "",
+        pptFile: null,
+        audioFile: null,
+        videoFile: null,
+        bookFiles: [],
+      })
+      setOpen(false)
+
+      if (result.processingFailed) {
+        toast.error("Lecture was uploaded, but processing failed. Open it to review the error.")
+      } else {
+        toast.success(result.message)
+      }
     } catch {
       toast.error("Upload failed. Please try again.")
     } finally {
-      setIsUploading(false)
+      setUploading(false)
     }
   }
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, type: "ppt" | "audio" | "video") => {
+  const handleFile = (
+    event: React.ChangeEvent<HTMLInputElement>,
+    type: "ppt" | "audio" | "video" | "book"
+  ) => {
     const file = event.target.files?.[0]
-    if (!file) return
-    setNewLecture((prev) => ({ ...prev, [`${type}File`]: file }))
+    if (file) {
+      setForm((previous) => ({ ...previous, [`${type}File`]: file }))
+    }
   }
 
-  const getStatusVariant = (status: string) => {
-    if (status === "completed") return "default" as const
-    if (status === "processing" || status === "queued") return "secondary" as const
-    return "outline" as const
-  }
+  const sortedLectures = useMemo(
+    () =>
+      [...(lectures as Lecture[])].sort(
+        (a, b) =>
+          new Date(b.createdAt || "").getTime() - new Date(a.createdAt || "").getTime()
+      ),
+    [lectures]
+  )
+
+  const counts = useMemo(() => {
+    const total = lectures.length
+    let completed = 0
+    let processing = 0
+
+    for (const lecture of lectures as Lecture[]) {
+      if (lecture.status === "completed") completed += 1
+      if (lecture.status === "processing" || lecture.status === "queued") processing += 1
+    }
+
+    return { total, completed, processing }
+  }, [lectures])
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Lectures</h1>
-          <p className="text-muted-foreground text-sm mt-1">Upload and manage your lecture content</p>
+          <h1 className="text-[24px] font-bold tracking-tight text-foreground">Lectures</h1>
+          <p className="text-[14px] text-muted-foreground mt-1">
+            Upload and manage your lecture content
+          </p>
         </div>
 
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Add Lecture
+            <Button className="bg-foreground text-background hover:bg-foreground/90 h-9 px-5 text-[13px] font-semibold rounded-lg shadow-warm">
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Lecture
             </Button>
           </DialogTrigger>
+
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Upload a lecture</DialogTitle>
-              <DialogDescription>
-                Add a YouTube link or upload video, audio, or slides
+              <DialogTitle className="text-[17px]">Upload a lecture</DialogTitle>
+              <DialogDescription className="text-[13px]">
+                Add a YouTube link or upload video, audio, or slides.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
+            <div className="space-y-4 pt-1">
+              <div className="space-y-1.5">
+                <Label className="text-[13px] font-medium">Title</Label>
                 <Input
-                  id="title"
                   placeholder="e.g. Data Structures - Lecture 5"
-                  value={newLecture.title}
-                  onChange={(e) => setNewLecture((prev) => ({ ...prev, title: e.target.value }))}
+                  value={form.title}
+                  onChange={(event) =>
+                    setForm((previous) => ({ ...previous, title: event.target.value }))
+                  }
+                  className="h-10 text-[14px] bg-secondary border-border"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[13px] font-medium">
+                  YouTube URL <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Input
+                  placeholder="https://youtube.com/watch?v=..."
+                  value={form.url}
+                  onChange={(event) =>
+                    setForm((previous) => ({ ...previous, url: event.target.value }))
+                  }
+                  className="h-10 text-[14px] bg-secondary border-border"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="url">YouTube URL <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <Input
-                  id="url"
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={newLecture.url}
-                  onChange={(e) => setNewLecture((prev) => ({ ...prev, url: e.target.value }))}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3">
                 {[
-                  { id: "video", label: "Video", accept: "video/*", icon: Video, file: newLecture.videoFile },
-                  { id: "audio", label: "Audio", accept: "audio/*", icon: AudioLines, file: newLecture.audioFile },
-                  { id: "ppt", label: "Slides", accept: ".pdf,.ppt,.pptx", icon: Presentation, file: newLecture.pptFile },
+                  {
+                    id: "video",
+                    label: "Video",
+                    accept: "video/*",
+                    icon: Video,
+                    file: form.videoFile,
+                  },
+                  {
+                    id: "audio",
+                    label: "Audio",
+                    accept: "audio/*",
+                    icon: AudioLines,
+                    file: form.audioFile,
+                  },
+                  {
+                    id: "ppt",
+                    label: "Slides",
+                    accept: ".pdf,.ppt,.pptx",
+                    icon: Presentation,
+                    file: form.pptFile,
+                  },
                 ].map((input) => (
-                  <div key={input.id} className="space-y-1.5">
-                    <Label htmlFor={input.id} className="text-sm">
-                      {input.label} <span className="text-muted-foreground font-normal">(optional)</span>
+                  <div key={input.id} className="space-y-1">
+                    <Label className="text-[12px] font-medium text-muted-foreground">
+                      {input.label} <span className="font-normal">(optional)</span>
                     </Label>
                     <Input
-                      id={input.id}
                       type="file"
                       accept={input.accept}
-                      onChange={(e) => handleFileUpload(e, input.id as "ppt" | "audio" | "video")}
-                      className="text-sm file:mr-3 file:text-sm"
+                      onChange={(event) =>
+                        handleFile(event, input.id as "ppt" | "audio" | "video")
+                      }
+                      className="text-[13px] h-9 bg-secondary border-border file:text-[12px] file:mr-2"
                     />
                     {input.file && (
-                      <p className="text-xs text-primary flex items-center gap-1">
+                      <p className="text-[11px] text-primary flex items-center gap-1">
                         <input.icon className="h-3 w-3" /> {input.file.name}
                       </p>
                     )}
                   </div>
                 ))}
+
+                {/* Book / Reference PDFs — indexed into vector DB */}
+                <div className="space-y-2 pt-1 border-t border-border">
+                  <Label className="text-[12px] font-medium text-muted-foreground flex items-center gap-1.5">
+                    <BookMarked className="h-3 w-3 text-[#EAB308]" />
+                    Reference Books / PDFs
+                    <span className="font-normal">(optional, up to 5)</span>
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Students can ask AI questions about these in the Library.
+                  </p>
+                  <Input
+                    type="file"
+                    accept=".pdf,.docx,.doc,.txt"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      setForm((prev) => ({
+                        ...prev,
+                        bookFiles: [...prev.bookFiles, ...files].slice(0, 5),
+                      }))
+                      e.target.value = ""
+                    }}
+                    className="text-[13px] h-9 bg-secondary border-border file:text-[12px] file:mr-2"
+                  />
+                  {form.bookFiles.length > 0 && (
+                    <div className="space-y-1">
+                      {form.bookFiles.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between text-[11px] text-[#EAB308] bg-[#EAB308]/5 rounded-lg px-2.5 py-1.5">
+                          <span className="flex items-center gap-1.5 truncate">
+                            <BookMarked className="h-3 w-3 shrink-0" />{f.name}
+                          </span>
+                          <button
+                            onClick={() => setForm((prev) => ({ ...prev, bookFiles: prev.bookFiles.filter((_, j) => j !== i) }))}
+                            className="text-muted-foreground hover:text-red-400 shrink-0 ml-2"
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  className="text-[13px] h-9"
+                  onClick={() => setOpen(false)}
+                >
                   Cancel
                 </Button>
-                <Button onClick={handleAddLecture} disabled={isUploading || !newLecture.title}>
-                  {isUploading ? (
+                <Button
+                  className="bg-foreground text-background hover:bg-foreground/90 text-[13px] h-9"
+                  onClick={handleUpload}
+                  disabled={uploading || !form.title.trim()}
+                >
+                  {uploading ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                       Uploading...
                     </>
                   ) : (
                     <>
-                      <Upload className="mr-2 h-4 w-4" />
+                      <Upload className="mr-1.5 h-4 w-4" />
                       Upload
                     </>
                   )}
@@ -181,109 +294,143 @@ export default function LecturesPage() {
         </Dialog>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Total", value: lectures.length },
-          { label: "Completed", value: lectures.filter((l: any) => l.status === "completed").length },
-          { label: "Processing", value: lectures.filter((l: any) => l.status === "processing" || l.status === "queued").length },
-          { label: "With media", value: lectures.filter((l: any) => l.audioUrl || l.videoUrl || l.youtubeUrl).length },
+          { label: "Total", value: counts.total },
+          { label: "Completed", value: counts.completed },
+          { label: "Processing", value: counts.processing },
         ].map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="pt-4 pb-3">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{stat.label}</p>
-              <p className="text-2xl font-bold mt-0.5">{stat.value}</p>
-            </CardContent>
-          </Card>
+          <div
+            key={stat.label}
+            className="p-4 rounded-2xl bg-card border border-border shadow-warm"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
+              {stat.label}
+            </p>
+            <p className="text-[28px] font-bold tracking-tight text-foreground">{stat.value}</p>
+          </div>
         ))}
       </div>
 
-      {/* Lecture grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[...lectures]
-          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .map((lecture: any, index: number) => (
-            <Card key={lecture._id || index} className="group hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <CardTitle className="text-base line-clamp-2 leading-snug">{lecture.title}</CardTitle>
-                    <CardDescription className="flex items-center gap-1.5 mt-2 text-xs">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(lecture.createdAt).toLocaleDateString()}
-                      {lecture.pptUrl && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 ml-1">
-                          <Presentation className="h-2.5 w-2.5 mr-0.5" />
-                          Slides
-                        </Badge>
-                      )}
-                    </CardDescription>
-                  </div>
-                  <Badge variant={getStatusVariant(lecture.status)} className="text-[10px] shrink-0">
-                    {lecture.status}
-                  </Badge>
-                </div>
-              </CardHeader>
+      {sortedLectures.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {sortedLectures.map((lecture) => {
+            const lectureId = lecture._id || lecture.id
 
-              <CardContent className="space-y-3">
-                <div className="flex gap-2">
+            return (
+              <div
+                key={lectureId}
+                className="group bg-card border border-border rounded-2xl shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-150 overflow-hidden cursor-pointer"
+                onClick={() => router.push(`/dashboard/lectures/${lectureId}`)}
+              >
+                <div className="p-5 pb-4">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="h-10 w-10 rounded-xl bg-secondary flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                      <BookOpen className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full border capitalize ${getLectureStatusStyle(
+                        lecture.status
+                      )}`}
+                    >
+                      {lecture.status}
+                    </span>
+                  </div>
+
+                  <h3 className="text-[15px] font-semibold text-foreground line-clamp-2 leading-snug mb-2">
+                    {lecture.title}
+                  </h3>
+
+                  <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                    <Calendar className="h-3 w-3" />
+                    {fmtDateShort(lecture.createdAt || "")}
+                    {lecture.pptUrl && (
+                      <span className="ml-1 flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground/70">
+                        <span aria-hidden="true">-</span>
+                        <Presentation className="h-2.5 w-2.5" />
+                        Slides
+                      </span>
+                    )}
+                  </div>
+
+                  {lecture.status === "failed" && lecture.errorMessage && (
+                    <p className="mt-2 text-[11px] text-red-600 line-clamp-2">
+                      {lecture.errorMessage}
+                    </p>
+                  )}
+                </div>
+
+                <div className="px-5 pb-4 flex gap-2 border-t border-border pt-3">
                   <Button
                     size="sm"
-                    className="flex-1 h-8 text-xs"
-                    onClick={() => router.push(`/dashboard/lectures/${lecture._id}`)}
+                    className="flex-1 h-8 text-[12px] bg-foreground text-background hover:bg-foreground/90 rounded-lg"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      router.push(`/dashboard/lectures/${lectureId}`)
+                    }}
                   >
-                    <PlayCircle className="mr-1 h-3 w-3" />
+                    <PlayCircle className="mr-1 h-3.5 w-3.5" />
                     {lecture.youtubeUrl ? "Watch" : "View"}
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() => router.push(`/dashboard/summaries?lecture=${lecture._id}`)}
+                    className="h-8 text-[12px] border-border rounded-lg"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      router.push(`/dashboard/summaries?lecture=${lectureId}`)
+                    }}
                   >
-                    <FileText className="mr-1 h-3 w-3" />
+                    <FileText className="mr-1 h-3.5 w-3.5" />
                     Summary
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-8 text-xs"
-                    onClick={() => router.push(`/dashboard/quizzes?lecture=${lecture._id}`)}
+                    className="h-8 text-[12px] border-border rounded-lg"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      router.push(`/dashboard/quizzes?lecture=${lectureId}`)
+                    }}
                   >
-                    <Brain className="mr-1 h-3 w-3" />
+                    <Brain className="mr-1 h-3.5 w-3.5" />
                     Quiz
                   </Button>
                 </div>
 
                 {lecture.youtubeUrl && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full h-7 text-xs text-muted-foreground"
-                    onClick={() => window.open(lecture.youtubeUrl, "_blank")}
-                  >
-                    <ExternalLink className="mr-1 h-3 w-3" />
-                    Open in YouTube
-                  </Button>
+                  <div className="px-5 pb-4">
+                    <button
+                      className="w-full text-[11px] text-muted-foreground hover:text-primary flex items-center justify-center gap-1 transition-colors"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        window.open(lecture.youtubeUrl || "", "_blank")
+                      }}
+                    >
+                      <ExternalLink className="h-3 w-3" /> Open in YouTube
+                    </button>
+                  </div>
                 )}
-              </CardContent>
-            </Card>
-          ))}
-      </div>
-
-      {/* Empty state */}
-      {lectures.length === 0 && (
-        <Card className="text-center py-16">
-          <CardContent>
-            <Upload className="h-10 w-10 text-muted-foreground/40 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-1">No lectures yet</h3>
-            <p className="text-sm text-muted-foreground mb-4">Upload your first lecture to get started</p>
-            <Button onClick={() => setIsDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Lecture
-            </Button>
-          </CardContent>
-        </Card>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-24 rounded-2xl bg-card border border-dashed border-border gap-4">
+          <Upload className="h-14 w-14 text-muted-foreground/20" />
+          <div className="text-center">
+            <h3 className="text-[16px] font-semibold mb-1">No lectures yet</h3>
+            <p className="text-[13px] text-muted-foreground">
+              Upload your first lecture to get started
+            </p>
+          </div>
+          <Button
+            className="bg-foreground text-background hover:bg-foreground/90 h-9 px-6 text-[13px] rounded-lg mt-2"
+            onClick={() => setOpen(true)}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Lecture
+          </Button>
+        </div>
       )}
     </div>
   )

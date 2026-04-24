@@ -46,6 +46,7 @@ router.post(
     { name: 'video', maxCount: 1 },
     { name: 'audio', maxCount: 1 },
     { name: 'ppt', maxCount: 1 },
+    { name: 'book', maxCount: 5 },
   ]),
   lecturesController.uploadLecture // ✅ fixed naming
 );
@@ -59,6 +60,14 @@ router.get('/:id', protect, lecturesController.getLectureById);
 // 🧾 Get lecture summary (AI + Local)
 router.get('/:id/summary', protect, lecturesController.getLectureSummary);
 
-router.post("/:id/process", protect, lecturesController.processLecture)
+router.post("/:id/process", protect, lecturesController.processLecture);
+
+// Upload books to an existing lecture
+router.post(
+  "/:id/books",
+  protect,
+  upload.fields([{ name: 'book', maxCount: 5 }]),
+  lecturesController.uploadBookToLecture
+);
 
 module.exports = router;

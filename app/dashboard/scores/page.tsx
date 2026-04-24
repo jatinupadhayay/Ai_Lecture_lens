@@ -77,8 +77,8 @@ export default function ScoresPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {quizAttempts.map((attempt: any) => (
-                  <TableRow key={attempt.id}>
+                {quizAttempts.map((attempt: any, i: number) => (
+                  <TableRow key={attempt._id || attempt.id || i}>
                     <TableCell className="font-medium text-sm">{getQuizTitle(attempt.quizId)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{getLectureTitle(attempt.quizId)}</TableCell>
                     <TableCell>

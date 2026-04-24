@@ -1,9 +1,16 @@
+<<<<<<< HEAD
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
+=======
+require("dotenv").config();
+>>>>>>> main
 const { Worker } = require("bullmq");
-const { connection } = require("./queues");
 const connectDB = require("./config/db");
+<<<<<<< HEAD
+=======
+const { connection } = require("./queues");
+>>>>>>> main
 const { processLectureJob, markLectureFailed } = require("./services/lectureProcessing");
 
 async function run() {
@@ -13,6 +20,7 @@ async function run() {
   const worker = new Worker(
     "ai-jobs",
     async (job) => {
+<<<<<<< HEAD
       const { lectureId, videoPath, audioPath, pptPath, youtubeUrl, audioUrl } = job.data;
 
       console.log(`[Worker] Processing lecture: ${lectureId}`);
@@ -43,5 +51,31 @@ async function run() {
 
 run().catch((err) => {
   console.error("Worker crashed:", err);
+=======
+      console.log(`[worker] Processing lecture ${job.data.lectureId}`);
+      await processLectureJob(job.data);
+      console.log(`[worker] Lecture ${job.data.lectureId} completed.`);
+      return { success: true };
+    },
+    {
+      connection,
+      lockDuration: 900000,    // 15 minutes — prevents lock expiry on long transcriptions
+      lockRenewTime: 300000,   // renew every 5 minutes
+    }
+  );
+
+  worker.on("completed", (job) => {
+    console.log(`[worker] Job ${job.id} completed successfully.`);
+  });
+
+  worker.on("failed", async (job, error) => {
+    console.error(`[worker] Job ${job?.id} failed: ${error.message}`);
+    await markLectureFailed(job?.data?.lectureId, error.message);
+  });
+}
+
+run().catch((error) => {
+  console.error("Worker crashed:", error);
+>>>>>>> main
   process.exit(1);
 });

@@ -1,6 +1,5 @@
-const mongoose = require('mongoose')
+const mongoose = require("mongoose");
 
-// 🎧 Transcript per line
 const transcriptSchema = new mongoose.Schema(
   {
     start: Number,
@@ -8,9 +7,8 @@ const transcriptSchema = new mongoose.Schema(
     text: String,
   },
   { _id: false }
-)
+);
 
-// 🖼️ Frame (optional, for future visual AI)
 const frameSchema = new mongoose.Schema(
   {
     time: Number,
@@ -18,9 +16,8 @@ const frameSchema = new mongoose.Schema(
     imageUrl: String,
   },
   { _id: false }
-)
+);
 
-// 🧠 Summary versions
 const summarySchema = new mongoose.Schema(
   {
     local: String,
@@ -28,50 +25,42 @@ const summarySchema = new mongoose.Schema(
     merged: String,
   },
   { _id: false }
-)
+);
 
-// 🎓 Lecture schema
 const lectureSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
-    description: { type: String, default: '' },
-    teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-
-    // ✅ Media sources (all optional)
+    description: { type: String, default: "" },
+    teacher: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     youtubeUrl: { type: String },
     videoUrl: { type: String },
     audioUrl: { type: String },
     pptUrl: { type: String },
-
-    // ✅ Processing state
     status: {
-  type: String,
-  enum: ['uploaded', 'queued', 'processing', 'completed', 'failed'],
-  default: 'uploaded',
-},
-
-    // ✅ AI-generated data
+      type: String,
+      enum: ["uploaded", "queued", "processing", "completed", "failed"],
+      default: "uploaded",
+    },
+    errorMessage: { type: String, default: "" },
     transcript: [transcriptSchema],
     frames: [frameSchema],
     summary: summarySchema,
-
-    // ✅ Quiz generated from lecture (raw text lines)
     quiz: {
       local: [{ type: String }],
       ai: [{ type: String }],
       merged: [{ type: String }],
     },
-
-    // ✅ Structured quiz (from OpenAI JSON output)
-    quizStructured: [{
-      question: { type: String },
-      options: [{ type: String }],
-      correctAnswer: { type: Number, default: 0 },
-    }],
-
+    quizStructured: [
+      {
+        question: { type: String },
+        options: [{ type: String }],
+        correctAnswer: { type: Number, default: 0 },
+      },
+    ],
+    bookDocumentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Document" }],
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
-)
+);
 
-module.exports = mongoose.model('Lecture', lectureSchema)
+module.exports = mongoose.model("Lecture", lectureSchema);

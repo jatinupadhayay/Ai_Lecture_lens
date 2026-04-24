@@ -1,51 +1,126 @@
 "use client"
 
 import { useRouter, usePathname } from "next/navigation"
+import { useRef, useState, useEffect, useMemo } from "react"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { BookOpen, FileText, Brain, Trophy, BarChart3, User, LayoutDashboard } from "lucide-react"
+import {
+  BookOpen, FileText, Brain, Trophy,
+  BarChart3, User, LayoutDashboard, LineChart, Library,
+} from "lucide-react"
 
-const sidebarItems = [
-  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Lectures", href: "/dashboard/lectures", icon: BookOpen },
-  { title: "Summaries", href: "/dashboard/summaries", icon: FileText },
-  { title: "Quizzes", href: "/dashboard/quizzes", icon: Brain },
-  { title: "Scores", href: "/dashboard/scores", icon: Trophy },
-  { title: "Progress", href: "/dashboard/progress", icon: BarChart3 },
-  { title: "Profile", href: "/dashboard/profile", icon: User },
-]
+const NAV_ITEMS = [
+  { label: "Home",      href: "/dashboard",           icon: LayoutDashboard },
+  { label: "Lectures",  href: "/dashboard/lectures",  icon: BookOpen },
+  { label: "Library",   href: "/dashboard/library",   icon: Library },
+  { label: "Summaries", href: "/dashboard/summaries", icon: FileText },
+  { label: "Quizzes",   href: "/dashboard/quizzes",   icon: Brain },
+  { label: "Scores",    href: "/dashboard/scores",    icon: Trophy },
+  { label: "Progress",  href: "/dashboard/progress",  icon: BarChart3 },
+  { label: "Analytics", href: "/dashboard/analytics", icon: LineChart },
+  { label: "Profile",   href: "/dashboard/profile",   icon: User },
+] as const
+
+const MIN_W     = 160
+const MAX_W     = 320
+const DEFAULT_W = 210
+const COLLAPSE_THRESHOLD = 180
 
 export function Sidebar() {
-  const router = useRouter()
+  const router   = useRouter()
   const pathname = usePathname()
+  const [width, setWidth] = useState(DEFAULT_W)
+
+  // Refs hold mutable drag state — no stale closure risk
+  const isResizing = useRef(false)
+  const startX     = useRef(0)
+  const startWidth = useRef(DEFAULT_W)
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isResizing.current) return
+      const next = Math.min(Math.max(startWidth.current + e.clientX - startX.current, MIN_W), MAX_W)
+      setWidth(next)
+    }
+    const onUp = () => {
+      isResizing.current        = false
+      document.body.style.cursor     = ""
+      document.body.style.userSelect = ""
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup",   onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup",   onUp)
+      // Reset body styles if component unmounts mid-drag
+      document.body.style.cursor     = ""
+      document.body.style.userSelect = ""
+    }
+  }, []) // stable: only refs and setWidth (stable dispatch) used inside
+
+  const collapsed = useMemo(() => width < COLLAPSE_THRESHOLD, [width])
+
+  const startResize = (e: React.MouseEvent) => {
+    isResizing.current        = true
+    startX.current            = e.clientX
+    startWidth.current        = width
+    document.body.style.cursor     = "col-resize"
+    document.body.style.userSelect = "none"
+  }
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r bg-card shrink-0">
-      <ScrollArea className="flex-1 px-3 py-4">
-        <nav className="space-y-1">
-          {sidebarItems.map((item) => {
-            const isActive = pathname === item.href ||
+    <aside
+      className="relative flex h-full flex-col border-r border-border bg-sidebar shrink-0"
+      style={{ width }}
+    >
+      <ScrollArea className="flex-1 py-4">
+        <nav className="px-2 space-y-0.5">
+          {NAV_ITEMS.map((item) => {
+            const active =
+              pathname === item.href ||
               (item.href !== "/dashboard" && pathname.startsWith(item.href))
 
             return (
-              <Button
+              <button
                 key={item.href}
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "w-full justify-start h-9 px-3 font-normal",
-                  isActive && "bg-primary/10 text-primary font-medium hover:bg-primary/15",
-                )}
                 onClick={() => router.push(item.href)}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] transition-all duration-150 text-left group",
+                  active
+                    ? "bg-[#EAB308]/12 text-[#EAB308] font-semibold"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
               >
-                <item.icon className={cn("mr-2.5 h-4 w-4", isActive ? "text-primary" : "text-muted-foreground")} />
-                {item.title}
-              </Button>
+                <item.icon className={cn(
+                  "h-[17px] w-[17px] shrink-0",
+                  active
+                    ? "text-[#EAB308]"
+                    : "text-muted-foreground/70 group-hover:text-foreground/70"
+                )} />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
             )
           })}
         </nav>
       </ScrollArea>
+
+      {!collapsed && (
+        <div className="p-3 border-t border-border">
+          <div className="rounded-xl bg-[#EAB308]/8 border border-[#EAB308]/20 p-3.5">
+            <p className="text-[11px] font-semibold text-[#EAB308] mb-1">Study Tip</p>
+            <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+              Review weak areas before starting new lectures.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Drag handle — 4 px wide, full height */}
+      <div
+        onMouseDown={startResize}
+        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 transition-colors z-10"
+      />
     </aside>
   )
 }

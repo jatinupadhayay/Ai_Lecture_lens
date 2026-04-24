@@ -1,9 +1,46 @@
-// 📁 src/lib/store.ts
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import { apiService } from "./api"
+import { apiService } from "@/lib/api"
+import type {
+  Lecture,
+  LectureSummary,
+  LectureUploadPayload,
+  Quiz,
+  QuizAttempt,
+  User,
+} from "@/lib/types"
 
-export const useAppStore = create(
+type UploadLectureResult = Awaited<ReturnType<typeof apiService.uploadLecture>>
+type ReprocessLectureResult = Awaited<ReturnType<typeof apiService.processLecture>>
+
+interface AppStoreState {
+  user: User | null
+  isAuthenticated: boolean
+  isLoading: boolean
+  lectures: Lecture[]
+  quizzes: Quiz[]
+  summaries: Record<string, LectureSummary>
+  login: (email: string, password: string) => Promise<boolean>
+  signup: (name: string, email: string, password: string) => Promise<boolean>
+  fetchProfile: () => Promise<void>
+  updateProfile: (data: { name?: string; email?: string }) => Promise<boolean>
+  logout: () => void
+  fetchLectures: () => Promise<void>
+  uploadLecture: (payload: LectureUploadPayload) => Promise<UploadLectureResult>
+  fetchSummary: (lectureId: string) => Promise<void>
+  reprocessLecture: (lectureId: string) => Promise<ReprocessLectureResult>
+  fetchQuizzes: (lectureId?: string) => Promise<void>
+  submitQuizAttempt: (quizId: string, answers: number[]) => Promise<any>
+  getUserQuizAttempts: () => QuizAttempt[]
+}
+
+function upsertLecture(lectures: Lecture[], nextLecture: Lecture) {
+  const lectureId = nextLecture._id || nextLecture.id
+  const remaining = lectures.filter((lecture) => (lecture._id || lecture.id) !== lectureId)
+  return [nextLecture, ...remaining]
+}
+
+export const useAppStore = create<AppStoreState>()(
   persist(
     (set, get) => ({
       user: null,
@@ -13,168 +50,172 @@ export const useAppStore = create(
       quizzes: [],
       summaries: {},
 
-      // 🔹 LOGIN
-      async login(email: string, password: string) {
+      async login(email, password) {
         try {
           const data = await apiService.login(email, password)
-          if (data?.token) localStorage.setItem("token", data.token)
-          set({ user: data.user, isAuthenticated: true })
+          if (data.token) {
+            localStorage.setItem("token", data.token)
+          }
+
+          set({
+            user: data.user,
+            isAuthenticated: true,
+            isLoading: false,
+          })
           return true
-        } catch (err) {
-          console.error("Login failed:", err)
+        } catch (error) {
+          console.error("Login failed:", error)
           return false
         }
       },
 
-      // 🔹 SIGNUP
-      async signup(name: string, email: string, password: string) {
+      async signup(name, email, password) {
         try {
           const data = await apiService.signup(name, email, password)
-          if (data?.token) localStorage.setItem("token", data.token)
-          set({ user: data.user, isAuthenticated: true })
+          if (data.token) {
+            localStorage.setItem("token", data.token)
+          }
+
+          set({
+            user: data.user,
+            isAuthenticated: true,
+            isLoading: false,
+          })
           return true
-        } catch (err) {
-          console.error("Signup failed:", err)
+        } catch (error) {
+          console.error("Signup failed:", error)
           return false
         }
       },
 
-      // 🔹 PROFILE
       async fetchProfile() {
         try {
           const token = localStorage.getItem("token")
           if (!token) {
-            set({ isLoading: false })
+            set({ isLoading: false, isAuthenticated: false, user: null })
             return
           }
-          const data = await apiService.getProfile()
-          set({ user: data, isAuthenticated: true, isLoading: false })
-        } catch (err) {
-          console.error("Profile fetch failed:", err)
+
+          const user = await apiService.getProfile()
+          set({
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+          })
+        } catch (error) {
+          console.error("Profile fetch failed:", error)
           localStorage.removeItem("token")
-          set({ user: null, isAuthenticated: false, isLoading: false })
+          set({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+          })
         }
       },
 
-      // 🔹 UPDATE PROFILE
-      async updateProfile(data: { name?: string; email?: string }) {
+      async updateProfile(data) {
         try {
-          const res = await apiService.updateProfile(data)
-          const updatedUser = res.user
-          set({ user: updatedUser })
+          const response = await apiService.updateProfile(data)
+          set({ user: response.user })
           return true
-        } catch (err) {
-          console.error("Update profile failed:", err)
+        } catch (error) {
+          console.error("Update profile failed:", error)
           return false
         }
       },
 
-      // 🔹 LOGOUT
       logout() {
         localStorage.removeItem("token")
         set({
           user: null,
           isAuthenticated: false,
+          isLoading: false,
           lectures: [],
           quizzes: [],
           summaries: {},
         })
       },
 
-      // 🔹 FETCH ALL LECTURES
       async fetchLectures() {
         try {
           const data = await apiService.getLectures()
-          set({ lectures: data.lectures || data })
-        } catch (err) {
-          console.error("Fetch lectures failed:", err)
+          set({ lectures: data.lectures || [] })
+        } catch (error) {
+          console.error("Fetch lectures failed:", error)
         }
       },
 
-      // 🔹 UPLOAD LECTURE
-      async uploadLecture(payload: {
-        title: string
-        description?: string
-        youtubeUrl?: string
-        audioUrl?: string
-        videoFile?: File | null
-        audioFile?: File | null
-        pptFile?: File | null
-      }) {
-        try {
-          const data = await apiService.uploadLecture(payload)
-          const uploadedLecture = data.lecture || data
-          const lectureId = uploadedLecture._id
+      async uploadLecture(payload) {
+        const result = await apiService.uploadLecture(payload)
+        const lectureId = result.lecture?._id || result.lecture?.id
 
+        set((state) => ({
+          lectures: upsertLecture(state.lectures, result.lecture),
+          summaries:
+            lectureId && result.lecture.summary
+              ? { ...state.summaries, [lectureId]: result.lecture.summary }
+              : state.summaries,
+        }))
+
+        return result
+      },
+
+      async fetchSummary(lectureId) {
+        try {
+          const response = await apiService.getLectureSummary(lectureId)
           set((state) => ({
-            lectures: [uploadedLecture, ...state.lectures],
+            summaries: {
+              ...state.summaries,
+              [lectureId]: response.summary || {},
+            },
           }))
-
-          console.log("✅ Lecture uploaded successfully:", uploadedLecture)
-          console.log("🧠 Lecture ID:", lectureId)
-
-          if (lectureId) {
-            try {
-              await get().fetchSummary(lectureId)
-            } catch (summaryErr) {
-              console.warn("⚠️ Summary fetch failed after upload:", summaryErr)
-            }
-          }
-
-          return uploadedLecture
-        } catch (err) {
-          console.error("❌ Upload lecture failed:", err)
-          throw err
+        } catch (error) {
+          console.error("Fetch summary failed:", error)
         }
       },
 
-      // 🔹 FETCH SUMMARY
-      async fetchSummary(lectureId: string) {
+      async reprocessLecture(lectureId) {
+        const result = await apiService.processLecture(lectureId)
+        set((state) => ({
+          lectures: upsertLecture(state.lectures, result.lecture),
+          summaries:
+            result.lecture.summary
+              ? { ...state.summaries, [lectureId]: result.lecture.summary }
+              : state.summaries,
+        }))
+        return result
+      },
+
+      async fetchQuizzes(lectureId) {
         try {
-          const data = await apiService.getLectureSummary(lectureId)
-          set((state) => ({
-            summaries: { ...state.summaries, [lectureId]: data },
-          }))
-        } catch (err) {
-          console.error("Fetch summary failed:", err)
+          const response = lectureId
+            ? await apiService.getLectureQuizzes(lectureId)
+            : await apiService.getQuizzes()
+
+          set({ quizzes: response.quizzes || [] })
+        } catch (error) {
+          console.error("Fetch quizzes failed:", error)
         }
       },
 
-      // 🔹 REPROCESS LECTURE
-      async reprocessLecture(lectureId: string) {
+      async submitQuizAttempt(quizId, answers) {
         try {
-          return await apiService.processLecture(lectureId)
-        } catch (err) {
-          console.error("Reprocess lecture failed:", err)
+          const result = await apiService.submitQuiz(quizId, answers)
+          await get().fetchProfile()
+          return result
+        } catch (error) {
+          console.error("Submit quiz failed:", error)
+          throw error
         }
       },
 
-      // 🔹 QUIZZES
-      async fetchQuizzes(lectureId?: string) {
-        try {
-          const data = await apiService.getLectureQuizzes(lectureId!)
-          set({ quizzes: data.quizzes || data })
-        } catch (err) {
-          console.error("Fetch quizzes failed:", err)
-        }
-      },
-
-      async submitQuizAttempt(quizId: string, answers: number[]) {
-        try {
-          return await apiService.submitQuiz(quizId, answers)
-        } catch (err) {
-          console.error("Submit quiz failed:", err)
-        }
-      },
-
-      // 🔹 USER QUIZ ATTEMPTS
       getUserQuizAttempts() {
-        const user = get().user
-        return user?.quizAttempts || []
+        return get().user?.quizAttempts || []
       },
     }),
     {
-      name: "smart-lecture-store",
+      name: "lecture-lens-store",
+      version: 1,
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,

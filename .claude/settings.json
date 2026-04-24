@@ -1,0 +1,53 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "Write|Edit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node hooks/ui_guard.js"
+        }
+      ]
+    },
+    {
+      "matcher": "Read|Edit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node hooks/protect_core.js"
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "Write|Edit|MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node hooks/formatter.js"
+        },
+        {
+          "type": "command",
+          "command": "node hooks/lint.js"
+        },
+        {
+          "type": "command",
+          "command": "node hooks/test_runner.js"
+        },
+        {
+          "type": "command",
+          "command": "node hooks/ai_validator.js"
+        },
+        {
+          "type": "command",
+          "command": "node hooks/python_pipeline.js"
+        },
+        {
+          "type": "command",
+          "command": "node hooks/logger.js"
+        }
+      ]
+    }
+  ]
+}

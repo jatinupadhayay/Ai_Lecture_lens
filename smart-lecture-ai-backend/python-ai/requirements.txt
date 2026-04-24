@@ -8,6 +8,9 @@ imageio-ffmpeg
 
 faster-whisper
 
+moviepy
+pydub
+faster-whisper
 opencv-python-headless
 pillow
 imagehash
@@ -19,10 +22,16 @@ torch
 
 nltk
 spacy
+<<<<<<< HEAD
 
 chromadb
-
 pymupdf
 python-docx
 
 paddleocr
+=======
+# RAG / vector store
+chromadb
+pymupdf
+python-docx
+>>>>>>> main
