@@ -166,8 +166,39 @@
               0 8px 24px oklch(0.148 0.010 55 / 0.05);
 }
 
+/* Dot-grid background texture */
+.bg-dot-grid {
+  background-image: radial-gradient(circle, rgba(180, 145, 55, 0.13) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
 /* Amber glow — used on primary CTA only */
 .amber-glow {
   box-shadow: 0 0 0 1px oklch(0.720 0.166 57 / 20%),
               0 4px 16px oklch(0.720 0.166 57 / 18%);
+}
+
+/* ── 3D quiz card flip-in ──────────────────────────────────────────────────── */
+@keyframes quiz-card-in {
+  from {
+    opacity: 0;
+    transform: perspective(600px) rotateX(16deg) translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(600px) rotateX(0deg) translateY(0px) scale(1);
+  }
+}
+.quiz-card-in {
+  animation: quiz-card-in 0.30s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Analytics pulsing AI orb ─────────────────────────────────────────────── */
+@keyframes orb-ring {
+  0%   { transform: scale(1);    opacity: 0.18; }
+  70%  { transform: scale(1.55); opacity: 0;    }
+  100% { transform: scale(1.55); opacity: 0;    }
+}
+.orb-ring {
+  animation: orb-ring 2.8s ease-out infinite;
 }

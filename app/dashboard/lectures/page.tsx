@@ -317,26 +317,44 @@ export default function LecturesPage() {
           {sortedLectures.map((lecture) => {
             const lectureId = lecture._id || lecture.id
 
+            // Pick banner gradient based on status
+            const banner =
+              lecture.status === "completed"
+                ? { from: "#fef3c7", to: "#fde68a", icon: "rgba(234,179,8,0.25)" }
+                : lecture.status === "failed"
+                ? { from: "#fee2e2", to: "#fecaca", icon: "rgba(239,68,68,0.2)" }
+                : { from: "#eff6ff", to: "#dbeafe", icon: "rgba(96,165,250,0.2)" }
+
             return (
               <div
                 key={lectureId}
-                className="group bg-card border border-border rounded-2xl shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-150 overflow-hidden cursor-pointer"
+                className="group bg-card border border-border rounded-2xl shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-200 overflow-hidden cursor-pointer"
                 onClick={() => router.push(`/dashboard/lectures/${lectureId}`)}
               >
-                <div className="p-5 pb-4">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="h-10 w-10 rounded-xl bg-secondary flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                      <BookOpen className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </div>
-                    <span
-                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full border capitalize ${getLectureStatusStyle(
-                        lecture.status
-                      )}`}
-                    >
-                      {lecture.status}
-                    </span>
-                  </div>
+                {/* ── Gradient banner ── */}
+                <div
+                  className="relative h-[88px] overflow-hidden"
+                  style={{ background: `linear-gradient(135deg, ${banner.from} 0%, ${banner.to} 100%)` }}
+                >
+                  {/* Large decorative icon */}
+                  <BookOpen
+                    className="absolute -bottom-3 -right-3 h-20 w-20 rotate-[-8deg]"
+                    style={{ color: banner.icon }}
+                  />
+                  {/* Status badge pinned top-right */}
+                  <span
+                    className={`absolute top-3 right-3 text-[10px] font-bold px-2.5 py-1 rounded-full border capitalize bg-white/70 backdrop-blur-sm ${getLectureStatusStyle(lecture.status)}`}
+                  >
+                    {lecture.status}
+                  </span>
+                  {/* Fade to card */}
+                  <div
+                    className="absolute bottom-0 inset-x-0 h-8 pointer-events-none"
+                    style={{ background: "linear-gradient(to top, var(--card), transparent)" }}
+                  />
+                </div>
 
+                <div className="px-5 pb-4 pt-2">
                   <h3 className="text-[15px] font-semibold text-foreground line-clamp-2 leading-snug mb-2">
                     {lecture.title}
                   </h3>
@@ -346,7 +364,7 @@ export default function LecturesPage() {
                     {fmtDateShort(lecture.createdAt || "")}
                     {lecture.pptUrl && (
                       <span className="ml-1 flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground/70">
-                        <span aria-hidden="true">-</span>
+                        <span aria-hidden="true">·</span>
                         <Presentation className="h-2.5 w-2.5" />
                         Slides
                       </span>
@@ -416,20 +434,38 @@ export default function LecturesPage() {
           })}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-24 rounded-2xl bg-card border border-dashed border-border gap-4">
-          <Upload className="h-14 w-14 text-muted-foreground/20" />
-          <div className="text-center">
-            <h3 className="text-[16px] font-semibold mb-1">No lectures yet</h3>
-            <p className="text-[13px] text-muted-foreground">
-              Upload your first lecture to get started
-            </p>
+        <div className="relative flex flex-col items-center justify-center py-24 rounded-2xl bg-card border border-dashed border-border gap-5 overflow-hidden">
+          {/* Dot-grid texture fill */}
+          <div className="bg-dot-grid absolute inset-0 opacity-50 pointer-events-none" aria-hidden />
+          {/* Ambient gradient center glow */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(234,179,8,0.06) 0%, transparent 80%)" }}
+            aria-hidden
+          />
+          <div className="relative z-10 flex flex-col items-center gap-5">
+            {/* Illustrated icon */}
+            <div className="relative">
+              <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-100 border border-amber-200/60 flex items-center justify-center shadow-warm">
+                <Upload className="h-8 w-8 text-amber-500" />
+              </div>
+              <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gradient-to-br from-amber-300 to-orange-400 flex items-center justify-center">
+                <Plus className="h-3 w-3 text-white" />
+              </div>
+            </div>
+            <div className="text-center">
+              <h3 className="text-[17px] font-semibold mb-1.5">No lectures yet</h3>
+              <p className="text-[13px] text-muted-foreground max-w-xs leading-relaxed">
+                Upload a video, audio, slides, or paste a YouTube link — AI will transcribe, summarize, and generate a quiz automatically.
+              </p>
+            </div>
+            <Button
+              className="bg-foreground text-background hover:bg-foreground/90 h-9 px-6 text-[13px] rounded-lg"
+              onClick={() => setOpen(true)}
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add your first lecture
+            </Button>
           </div>
-          <Button
-            className="bg-foreground text-background hover:bg-foreground/90 h-9 px-6 text-[13px] rounded-lg mt-2"
-            onClick={() => setOpen(true)}
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Lecture
-          </Button>
         </div>
       )}
     </div>

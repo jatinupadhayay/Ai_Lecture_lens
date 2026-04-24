@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   BookOpen, FileText, Brain, Trophy,
-  BarChart3, User, LayoutDashboard, LineChart, Library,
+  BarChart3, User, LayoutDashboard, LineChart, Library, Lightbulb,
 } from "lucide-react"
 
 const NAV_ITEMS = [
@@ -107,11 +107,16 @@ export function Sidebar() {
 
       {!collapsed && (
         <div className="p-3 border-t border-border">
-          <div className="rounded-xl bg-[#EAB308]/8 border border-[#EAB308]/20 p-3.5">
-            <p className="text-[11px] font-semibold text-[#EAB308] mb-1">Study Tip</p>
-            <p className="text-[11.5px] text-muted-foreground leading-relaxed">
+          {/* Editorial tip card — icon pinned to bottom-right (Behance inspired) */}
+          <div className="relative rounded-xl overflow-hidden bg-gradient-to-br from-[#EAB308]/10 to-[#D97706]/8 border border-[#EAB308]/20 p-3.5 min-h-[90px]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#D97706]/70 mb-1.5">Study Tip</p>
+            <p className="text-[11.5px] text-muted-foreground leading-relaxed pr-7">
               Review weak areas before starting new lectures.
             </p>
+            {/* Icon pinned bottom-right */}
+            <div className="absolute bottom-3 right-3 h-7 w-7 rounded-lg bg-[#EAB308]/15 flex items-center justify-center">
+              <Lightbulb className="h-3.5 w-3.5 text-[#D97706]" />
+            </div>
           </div>
         </div>
       )}

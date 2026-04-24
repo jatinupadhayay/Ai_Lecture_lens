@@ -279,7 +279,7 @@ export default function QuizPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card key={currentQuestion} className="quiz-card-in">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <Brain className="h-4 w-4 text-primary" /> Question {currentQuestion + 1}

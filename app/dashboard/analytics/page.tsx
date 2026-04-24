@@ -147,7 +147,14 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="relative">
+        {/* Pulsing AI orb — decorative accent */}
+        <div className="absolute right-0 top-0 w-16 h-16 pointer-events-none select-none" aria-hidden>
+          <div className="orb-ring absolute inset-0 rounded-full bg-amber-400/20" />
+          <div className="orb-ring absolute inset-0 rounded-full bg-amber-400/15" style={{ animationDelay: "0.9s" }} />
+          <div className="absolute inset-3 rounded-full border border-amber-400/30 animate-pulse" />
+          <div className="absolute inset-[22px] rounded-full bg-amber-400/50" />
+        </div>
         <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Your quiz performance, weak areas, and how you rank among peers
