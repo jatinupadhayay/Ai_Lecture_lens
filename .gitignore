@@ -40,6 +40,7 @@ __pycache__/
 *.pyo
 *.pyd
 venv/
+myenv
 *.egg-info/
 *.eggs
 
