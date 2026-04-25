@@ -16,13 +16,9 @@ function buildLectureText(transcript = [], frames = []) {
 }
 
 function buildMergedSummary(localSummary = "", aiSummary = "") {
-<<<<<<< HEAD
   return [localSummary?.trim(), aiSummary?.trim()]
     .filter(Boolean)
     .join("\n\n---\n\n");
-=======
-  return [localSummary?.trim(), aiSummary?.trim()].filter(Boolean).join("\n\n---\n\n");
->>>>>>> main
 }
 
 function normalizeStringArray(value) {
@@ -95,10 +91,7 @@ async function processLectureJob({
       aiService.transcribe(inputFile),
       aiService.extract(inputFile),
     ]);
-<<<<<<< HEAD
 
-=======
->>>>>>> main
     const frames = Array.isArray(extractResult)
       ? extractResult
       : extractResult?.frames || [];
@@ -108,39 +101,22 @@ async function processLectureJob({
       throw new Error("Processing finished without extractable lecture text.");
     }
 
-<<<<<<< HEAD
-=======
     // Ingest lecture transcript into ChromaDB for semantic retrieval
->>>>>>> main
     const lectureIdStr = lectureId.toString();
     const ingested = await aiService.ingestLectureText(lectureIdStr, lectureText);
     console.log(`[lectureProcessing] Transcript ingested into vector store: ${ingested}`);
 
-<<<<<<< HEAD
-    const preparedText = await aiService.prepareText(lectureText);
-
-    const bookDocumentIds = (lecture.bookDocumentIds || []).map((id) => id.toString());
-
-    const semanticOpts = {
-      lectureId: ingested ? lectureIdStr : null,
-      bookDocumentIds: ingested ? bookDocumentIds : [],
-    };
-=======
     // Clean + extract key content — used as fallback when vector store unavailable
     const preparedText = await aiService.prepareText(lectureText);
 
     const bookDocumentIds = (lecture.bookDocumentIds || []).map((id) => id.toString());
     const semanticOpts = { lectureId: lectureIdStr, bookDocumentIds };
->>>>>>> main
 
     const [summaryResult, quizResult] = await Promise.all([
       aiService.dualSummarize(preparedText, semanticOpts),
       aiService.generateQuiz(preparedText, 7, semanticOpts),
     ]);
-<<<<<<< HEAD
 
-=======
->>>>>>> main
     const localSummary = summaryResult.localSummary || "";
     const aiSummary = summaryResult.aiSummary || "";
     const mergedSummary = buildMergedSummary(localSummary, aiSummary);
@@ -151,40 +127,22 @@ async function processLectureJob({
 
     lecture.transcript = Array.isArray(transcript) ? transcript : [];
     lecture.frames = frames;
-<<<<<<< HEAD
-
-=======
->>>>>>> main
     lecture.summary = {
       local: localSummary,
       ai: aiSummary,
       merged: mergedSummary,
     };
-<<<<<<< HEAD
-
-=======
->>>>>>> main
     lecture.quiz = {
       local: normalizeStringArray(quizResult.localQuiz),
       ai: normalizeStringArray(quizResult.aiQuiz),
-      merged: normalizeStringArray(quizResult.mergedQuiz),
+      merged: [], // We don't really use mergedQuiz strings anymore since we have structured
     };
-<<<<<<< HEAD
-
-    lecture.quizStructured = Array.isArray(quizResult.aiQuizStructured)
-      ? quizResult.aiQuizStructured
-      : [];
-
-    lecture.status = "completed";
-    lecture.errorMessage = "";
-
-=======
     lecture.quizStructured = Array.isArray(quizResult.aiQuizStructured)
       ? quizResult.aiQuizStructured
       : [];
     lecture.status = "completed";
     lecture.errorMessage = "";
->>>>>>> main
+    
     await lecture.save();
 
     return lecture;
@@ -201,8 +159,4 @@ module.exports = {
   buildMergedSummary,
   processLectureJob,
   markLectureFailed,
-<<<<<<< HEAD
 };
-=======
-};
->>>>>>> main

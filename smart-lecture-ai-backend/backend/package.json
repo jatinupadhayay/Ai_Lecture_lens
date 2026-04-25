@@ -9,11 +9,7 @@
     "test": "node --test --test-isolation=none tests/**/*.test.js"
   },
   "dependencies": {
-<<<<<<< HEAD
-    "@distube/ytdl-core": "^4.15.9",
-=======
     "@distube/ytdl-core": "^4.16.12",
->>>>>>> main
     "@google/generative-ai": "^0.24.1",
     "aws-sdk": "^2.1400.0",
     "axios": "^1.13.1",

@@ -5,17 +5,13 @@ const path = require("path");
 const axios = require("axios");
 const { spawnSync, execFileSync } = require("child_process");
 const FormData = require("form-data");
-const Groq = require("groq-sdk");
-const { geminiChat, geminiJSON } = require("./gemini");
-
-=======
-const Groq = require("groq-sdk");
 const { geminiChat, geminiJSON } = require("./gemini");
 
 // ── Python / FastAPI config ──
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
-const AI_MODELS_DIR = path.join(__dirname, "../ ai_models");
+const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
+
 // FastAPI service URLs (preferred)
 const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
 const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
@@ -24,12 +20,9 @@ const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
 const CLEAN_URL = process.env.CLEAN_SERVICE_URL
   || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
 
-const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
-// ── Groq client (for Whisper + LLM fallback) ──
-const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
-
 const log = (...msg) => console.log("[aiService]", ...msg);
 const errLog = (...msg) => console.error("[aiService]", ...msg);
+
 const GROQ_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 
 function axiosErrorDetail(err) {
@@ -149,7 +142,7 @@ function findYtDlp() {
   for (const cmd of [process.env.YT_DLP_PATH, "yt-dlp", "yt-dlp.exe"].filter(Boolean)) {
     try { execFileSync(cmd, ["--version"], { stdio: "pipe" }); return cmd; } catch {}
   }
-  throw new Error("yt-dlp not found.");
+  throw new Error("yt-dlp not found. Install it: https://github.com/yt-dlp/yt-dlp#installation");
 }
 
 function findFfmpeg() {
@@ -195,8 +188,6 @@ function prepareWhisperFile(filePath) {
   const compressedSize = fs.statSync(outPath).size;
   log(`Compressed audio for Whisper: ${Math.round(size / 1024 / 1024)}MB -> ${Math.round(compressedSize / 1024 / 1024)}MB`);
   return { filePath: outPath, cleanupPath: outPath };
-  throw new Error("yt-dlp not found. Install it: https://github.com/yt-dlp/yt-dlp#installation");
-  throw new Error("yt-dlp not found. Install: https://github.com/yt-dlp/yt-dlp#installation");
 }
 
 async function downloadYouTubeVideo(url, outDir) {
@@ -223,8 +214,9 @@ async function downloadYouTubeVideo(url, outDir) {
 
   const files = fs.readdirSync(outDir)
     .map(f => path.join(outDir, f))
-    .filter(f => f.includes("youtube_"));
+    .filter(f => f.includes("youtube_") && fs.statSync(f).isFile());
 
+  if (files.length === 0) throw new Error("yt-dlp ran but no output file found");
   return files[0];
 }
 
@@ -241,10 +233,14 @@ function normalizeTranscript(data) {
 exports.transcribe = async (filePath) => {
   log("Transcribing:", filePath);
 
-  if (groqClient) {
+  // 1. Try Groq (Whisper) via gemini.js fallback mechanism or direct
+  // Note: gemini.js currently doesn't handle audio, so we use Groq directly if available
+  const GroqSDK = require("groq-sdk");
+  if (process.env.GROQ_API_KEY) {
+    const groq = new GroqSDK({ apiKey: process.env.GROQ_API_KEY });
     const whisperFile = prepareWhisperFile(filePath);
     try {
-      const transcription = await groqClient.audio.transcriptions.create({
+      const transcription = await groq.audio.transcriptions.create({
         file: fs.createReadStream(whisperFile.filePath),
         model: "whisper-large-v3-turbo",
         response_format: "verbose_json",
@@ -260,6 +256,7 @@ exports.transcribe = async (filePath) => {
     }
   }
 
+  // 2. Try FastAPI transcribe service
   if (TRANSCRIBE_URL) {
     try {
       const data = await sendFileToService(TRANSCRIBE_URL, filePath);
@@ -267,18 +264,16 @@ exports.transcribe = async (filePath) => {
     } catch (err) {
       errLog("FastAPI transcribe failed:", err.message);
     }
-      errLog("FastAPI transcribe failed, falling back to local:", err.message, err.code || "");
-    }
   }
 
-  // ── 3. Local spawnSync fallback ──
+  // 3. Try Local fallback
   try {
     const result = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "transcriber.py"), filePath], { encoding: "utf8" });
-    if (result.error) throw new Error(result.error.message);
-    return JSON.parse(result.stdout.toString().trim() || "[]");
+    if (result.status === 0) {
+      return JSON.parse(result.stdout.toString().trim() || "[]");
+    }
   } catch (err) {
-    errLog("Local transcribe failed:", err.message);
-    return [];
+    errLog("Local transcribe fallback failed:", err.message);
   }
 
   return [];
@@ -343,7 +338,8 @@ exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = 
 
     const seen = new Set();
     const unique = allChunks.filter((c) => {
-      const key = `${c.chunk_index ?? c.text?.slice(0, 40)}`;
+        const text = c.text || "";
+      const key = `${c.chunk_index ?? text.slice(0, 40)}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -380,7 +376,6 @@ exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = 
 exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentIds = [] } = {}) => {
   log("Generating quiz, text length:", text?.length || 0);
   let localQuiz = [];
-  let aiQuiz = [];
   let aiQuizStructured = [];
   let semanticContext = "";
 
@@ -397,6 +392,7 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
 
   const quizContent = semanticContext || text;
 
+  // 1. Try FastAPI for local quiz (often Flan-T5)
   if (QUIZ_URL) {
     try {
       const res = await axios.post(
@@ -405,70 +401,42 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
         { timeout: 300000 }
       );
       if (Array.isArray(res.data?.structured)) {
-        aiQuizStructured = res.data.structured;
-      }
-      if (Array.isArray(res.data?.questions)) {
-        localQuiz = res.data.questions.map((q) => typeof q === "string" ? q : q.question || JSON.stringify(q));
-      // Use new structured MCQ format from Flan-T5 when available
-      if (result.structured && Array.isArray(result.structured)) {
-        localQuizStructured = result.structured;
-        log("Quiz via FastAPI (structured):", localQuizStructured.length, "MCQs");
-      }
-      if (result.questions) {
-        localQuiz = result.questions.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q));
+        localQuiz = res.data.structured;
+      } else if (Array.isArray(res.data?.questions)) {
+        localQuiz = res.data.questions;
       }
     } catch (err) {
       errLog("FastAPI quiz failed:", err.message);
     }
   }
 
+  // 2. Try Gemini for AI structured quiz
   try {
-    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
-Return ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
-correctAnswer is a 0-based index. Generate exactly ${numQuestions} questions.`;
-    const parsed = await geminiJSON(systemPrompt, `Generate ${numQuestions} MCQs from:\n${quizContent}`);
-
-    if (Array.isArray(parsed.questions)) {
-      aiQuizStructured = parsed.questions;
-      const letters = ["A", "B", "C", "D"];
-      aiQuiz = parsed.questions.map((q, i) => {
-        const opts = (q.options || []).map((o, j) => `${letters[j]}) ${o}`).join("\n");
-        return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
-      });
-    }
-  } catch (err) {
-    errLog("LLM quiz failed:", err.message);
-    }
-  }
-
-  // ── Gemini/Groq structured quiz ──
-  try {
-    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
-Return ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
-correctAnswer is 0-based index. Generate exactly ${numQuestions} questions.
-Make questions test understanding. Each option should be plausible. Avoid "All of the above".`;
-
-    const parsed = await geminiJSON(systemPrompt, `Generate ${numQuestions} MCQs from:\n${quizContent}`);
+    const systemPrompt = `You are an educational AI. Generate exactly ${numQuestions} multiple-choice questions (MCQs) as JSON.
+Format: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
+correctAnswer is 0-based index.`;
+    const parsed = await geminiJSON(systemPrompt, `Generate MCQs from:\n${quizContent}`);
 
     if (parsed.questions && Array.isArray(parsed.questions)) {
       aiQuizStructured = parsed.questions;
-      const letters = ["A", "B", "C", "D"];
-      aiQuiz = parsed.questions.map((q, i) => {
-        const opts = q.options.map((o, j) => `${letters[j]}) ${o}`).join("\n");
-        return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
-      });
-      log("LLM structured quiz:", aiQuizStructured.length, "questions");
     }
   } catch (err) {
     errLog("LLM quiz failed:", err.message);
   }
 
-  const finalStructured = aiQuizStructured.length > 0 ? aiQuizStructured : localQuizStructured;
+  const finalStructured = aiQuizStructured.length > 0 ? aiQuizStructured : (Array.isArray(localQuiz) ? localQuiz : []);
+
+  // Format AI quiz as strings for compatibility if needed
+  const letters = ["A", "B", "C", "D"];
+  const aiQuizStrings = aiQuizStructured.map((q, i) => {
+    const opts = (q.options || []).map((o, j) => `${letters[j]}) ${o}`).join("\n");
+    return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
+  });
 
   return {
-    localQuiz,
-    aiQuiz,
-    mergedQuiz: [...localQuiz, "---", ...aiQuiz],
+    localQuiz: Array.isArray(localQuiz) ? localQuiz.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q)) : [],
+    aiQuiz: aiQuizStrings,
+    mergedQuiz: [],
     aiQuizStructured: finalStructured,
   };
 };
@@ -482,14 +450,6 @@ exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audi
     if (youtubeUrl) {
       const downloaded = await downloadYouTubeVideo(youtubeUrl, tmpDir);
       return { videoPath: downloaded, cleanupPaths: [downloaded] };
-    }
-    if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
-    if (audioUrl) {
-      const downloaded = await downloadFileFromUrl(audioUrl, tmpDir, "audio");
-      return { audioPath: downloaded, cleanupPaths: [downloaded] };
-    }
-    if (pptPath && fs.existsSync(pptPath)) return { pptPath, cleanupPaths: [] };
-
     }
     if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
     if (audioUrl) {

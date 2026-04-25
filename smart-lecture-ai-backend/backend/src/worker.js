@@ -1,16 +1,10 @@
-<<<<<<< HEAD
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
-=======
-require("dotenv").config();
->>>>>>> main
 const { Worker } = require("bullmq");
 const connectDB = require("./config/db");
-<<<<<<< HEAD
-=======
 const { connection } = require("./queues");
->>>>>>> main
+
 const { processLectureJob, markLectureFailed } = require("./services/lectureProcessing");
 
 async function run() {
@@ -20,41 +14,10 @@ async function run() {
   const worker = new Worker(
     "ai-jobs",
     async (job) => {
-<<<<<<< HEAD
-      const { lectureId, videoPath, audioPath, pptPath, youtubeUrl, audioUrl } = job.data;
-
-      console.log(`[Worker] Processing lecture: ${lectureId}`);
-      await processLectureJob({
-        lectureId,
-        videoPath,
-        audioPath,
-        pptPath,
-        youtubeUrl,
-        audioUrl,
-      });
-      console.log(`[Worker] Lecture ${lectureId} completed successfully.`);
-
-      return { success: true };
-    },
-    { connection }
-  );
-
-  worker.on("completed", (job) => {
-    console.log(`Job ${job.id} completed successfully.`);
-  });
-
-  worker.on("failed", async (job, err) => {
-    console.error(`Job ${job?.id} failed: ${err.message}`);
-    await markLectureFailed(job?.data?.lectureId, err.message);
-  });
-}
-
-run().catch((err) => {
-  console.error("Worker crashed:", err);
-=======
-      console.log(`[worker] Processing lecture ${job.data.lectureId}`);
+      const { lectureId } = job.data;
+      console.log(`[worker] Processing lecture ${lectureId}`);
       await processLectureJob(job.data);
-      console.log(`[worker] Lecture ${job.data.lectureId} completed.`);
+      console.log(`[worker] Lecture ${lectureId} completed.`);
       return { success: true };
     },
     {
@@ -76,6 +39,6 @@ run().catch((err) => {
 
 run().catch((error) => {
   console.error("Worker crashed:", error);
->>>>>>> main
   process.exit(1);
 });
+

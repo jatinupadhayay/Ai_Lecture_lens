@@ -7,19 +7,9 @@ const Groq = require("groq-sdk");
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const Groq = require("groq-sdk");
-
-const genAI = process.env.GEMINI_API_KEY
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  : null;
-
-const groqClient = process.env.GROQ_API_KEY
-  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
-  : null;
 
 const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "llama-3.1-70b-versatile"; // Updated to a stable Groq model
 
 const MAX_RETRIES = 1;
 const RETRY_DELAY_MS = 2000;
@@ -50,32 +40,19 @@ async function geminiChatCall(systemPrompt, userMessage, opts, modelName) {
   if (!client) throw new Error("GEMINI_API_KEY not set");
 
   const model = client.getGenerativeModel({
-
-async function callGemini(modelName, systemPrompt, userMessage, opts = {}) {
-  const model = genAI.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
   });
 
-  const chat = model.startChat({ history: opts.history || [] });
-  const result = await chat.sendMessage(userMessage);
-  return result.response.text();
-}
-
-async function geminiJSONCall(systemPrompt, userMessage, opts, modelName) {
-  const client = getGemini();
-  if (!client) throw new Error("GEMINI_API_KEY not set");
-
-  const model = client.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemPrompt,
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+  const chat = model.startChat({ 
+    history: opts.history || [],
     generationConfig: {
-      maxOutputTokens: opts.maxTokens || 2048,
+      maxOutputTokens: opts.maxTokens || 4096,
       temperature: opts.temperature ?? 0.7,
-    },
+    }
   });
+
+  const result = await chat.sendMessage(userMessage);
   return result.response.text();
 }
 
@@ -84,8 +61,8 @@ async function groqChatCall(systemPrompt, userMessage, opts) {
   if (!client) throw new Error("GROQ_API_KEY not set");
 
   const history = (opts.history || []).map((message) => ({
-    role: message.role === "model" ? "assistant" : message.role,
-    content: message.parts ? message.parts.map((part) => part.text).join("") : message.content || "",
+    role: message.role === "model" ? "assistant" : (message.role === "user" ? "user" : "system"),
+    content: typeof message.parts === 'string' ? message.parts : (Array.isArray(message.parts) ? message.parts.map(p => p.text).join("") : message.content || ""),
   }));
 
   const completion = await client.chat.completions.create({
@@ -95,50 +72,27 @@ async function groqChatCall(systemPrompt, userMessage, opts) {
       ...history,
       { role: "user", content: userMessage },
     ],
-    max_tokens: opts.maxTokens || 2048,
+    max_tokens: opts.maxTokens || 4096,
     temperature: opts.temperature ?? 0.4,
   });
 
   return completion.choices[0].message.content;
 }
 
-async function groqJSONCall(systemPrompt, userMessage, opts) {
-  const client = getGroq();
-  if (!client) throw new Error("GROQ_API_KEY not set");
-
-  const completion = await client.chat.completions.create({
-    model: GROQ_MODEL,
-    messages: [
-      { role: "system", content: `${systemPrompt}\nRespond ONLY with valid JSON, no markdown.` },
-async function callGroq(systemPrompt, userMessage, opts = {}) {
-  const completion = await groqClient.chat.completions.create({
-    model: GROQ_MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-    max_tokens: opts.maxTokens || 2048,
-    temperature: opts.temperature ?? 0.7,
-  });
-  return completion.choices[0].message.content;
-}
-
 function isRetryable(err) {
-  const message = err.message || "";
-  return message.includes("429") || message.includes("quota") || message.includes("503") || message.includes("overloaded");
-}
-
-function parseJSON(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (match) return JSON.parse(match[1].trim());
-    throw new Error(`Invalid JSON: ${raw.slice(0, 200)}`);
-  }
+  const status = err.status || err.response?.status;
+  const message = err.message?.toLowerCase() || "";
+  return (
+    status === 429 || 
+    status === 503 || 
+    message.includes("quota") || 
+    message.includes("overloaded") || 
+    message.includes("rate limit")
+  );
 }
 
 async function callWithFallback(geminiCall, groqCall, systemPrompt, userMessage, opts) {
+  // Try Gemini models first
   if (GEMINI_API_KEY) {
     for (const modelName of GEMINI_MODELS) {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
@@ -147,71 +101,69 @@ async function callWithFallback(geminiCall, groqCall, systemPrompt, userMessage,
           log(`Success via Gemini (${modelName})`);
           return result;
         } catch (err) {
-          if (isRetryable(err) && attempt < MAX_RETRIES) {
-            errLog(`${modelName} rate limited, retrying in ${RETRY_DELAY_MS}ms...`);
-            await sleep(RETRY_DELAY_MS);
-            continue;
-          }
           if (isRetryable(err)) {
+            if (attempt < MAX_RETRIES) {
+              errLog(`${modelName} rate limited, retrying in ${RETRY_DELAY_MS}ms...`);
+              await sleep(RETRY_DELAY_MS);
+              continue;
+            }
             errLog(`${modelName} exhausted, trying next...`);
-            break;
+            break; // Try next Gemini model
           }
-          errLog(`${modelName} error:`, err.message?.slice(0, 150));
-          break;
-/**
- * Call Gemini with automatic fallback: Gemini Flash → Flash Lite → Groq Llama.
- */
-async function geminiChat(systemPrompt, userMessage, opts = {}) {
-  if (genAI) {
-    for (const modelName of GEMINI_MODELS) {
-      try {
-        return await callGemini(modelName, systemPrompt, userMessage, opts);
-      } catch (err) {
-        const status = err?.status || err?.response?.status;
-        if (status === 429 || status === 503) {
-          console.warn(`[gemini] ${modelName} quota/overload, trying next...`);
-          await sleep(1000);
-          continue;
+          errLog(`${modelName} terminal error:`, err.message?.slice(0, 150));
+          break; // Try next Gemini model
         }
-        throw err;
       }
     }
   }
 
+  // Fallback to Groq
   if (GROQ_API_KEY) {
-    log(`Falling back to Groq (${GROQ_MODEL})...`);
-    const result = await groqCall(systemPrompt, userMessage, opts);
-    log(`Success via Groq (${GROQ_MODEL})`);
-    return result;
-  if (groqClient) {
-    console.warn("[gemini] All Gemini models failed, falling back to Groq Llama...");
-    return await callGroq(systemPrompt, userMessage, opts);
+    try {
+      log(`Falling back to Groq (${GROQ_MODEL})...`);
+      const result = await groqCall(systemPrompt, userMessage, opts);
+      log(`Success via Groq (${GROQ_MODEL})`);
+      return result;
+    } catch (err) {
+      errLog(`Groq fallback failed: ${err.message}`);
+    }
   }
 
-  throw new Error("No LLM available. Set GEMINI_API_KEY or GROQ_API_KEY.");
+  throw new Error("No LLM available or all models failed. Set GEMINI_API_KEY or GROQ_API_KEY.");
 }
 
+/**
+ * Call Gemini primary with Groq fallback.
+ */
 async function geminiChat(systemPrompt, userMessage, opts = {}) {
   return callWithFallback(geminiChatCall, groqChatCall, systemPrompt, userMessage, opts);
 }
 
+/**
+ * Call Gemini/Groq and ensure JSON output.
  */
 async function geminiJSON(systemPrompt, userMessage, opts = {}) {
-  const raw = await geminiChat(
-    systemPrompt + "\n\nIMPORTANT: Respond with valid JSON only. No markdown, no code blocks.",
-    userMessage,
-    opts
-  );
+  const jsonPrompt = `${systemPrompt}\n\nIMPORTANT: Your response MUST be valid JSON only. Do not include any explanation, markdown formatting, or code blocks.`;
+  
+  const raw = await geminiChat(jsonPrompt, userMessage, opts);
 
-  // Strip markdown code fences if present
+  // Clean raw string (strip markdown code fences if present)
   const cleaned = raw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+  
   try {
     return JSON.parse(cleaned);
-  } catch {
-    // Try extracting first JSON object/array
+  } catch (err) {
+    // Try to extract JSON object/array from the text if parsing failed
     const match = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (match) return JSON.parse(match[1]);
-    throw new Error(`geminiJSON: could not parse response as JSON:\n${cleaned.slice(0, 300)}`);
+    if (match) {
+      try {
+        return JSON.parse(match[1]);
+      } catch (innerErr) {
+        // failed again
+      }
+    }
+    errLog("geminiJSON: Failed to parse as JSON. Raw output:", raw.slice(0, 500));
+    throw new Error(`Failed to parse LLM response as JSON: ${err.message}`);
   }
 }
 
