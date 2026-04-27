@@ -11,10 +11,10 @@
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
     "@google/generative-ai": "^0.24.1",
-    "aws-sdk": "^2.1400.0",
+    "aws-sdk": "^1.18.0",
     "axios": "^1.13.1",
     "bcryptjs": "^2.4.3",
-    "bullmq": "^1.91.0",
+    "bullmq": "^5.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "express": "^4.18.2",
