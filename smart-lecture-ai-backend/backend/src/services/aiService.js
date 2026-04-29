@@ -6,6 +6,7 @@ const axios = require("axios");
 const { spawnSync, execFileSync } = require("child_process");
 const FormData = require("form-data");
 const Groq = require("groq-sdk");
+const { YoutubeTranscript } = require("youtube-transcript");
 const { geminiChat, geminiJSON } = require("./gemini");
 
 // ── Python / FastAPI config ──
@@ -190,6 +191,19 @@ function prepareWhisperFile(filePath) {
   log(`Compressed audio for Whisper: ${Math.round(size / 1024 / 1024)}MB -> ${Math.round(compressedSize / 1024 / 1024)}MB`);
   return { filePath: outPath, cleanupPath: outPath };
 }
+
+async function fetchYouTubeTranscript(url) {
+  log("Fetching YouTube transcript via caption API:", url);
+  const transcript = await YoutubeTranscript.fetchTranscript(url);
+  if (!transcript?.length) throw new Error("No captions found for this video.");
+  return transcript.map(seg => ({
+    start: seg.offset / 1000,
+    end: (seg.offset + seg.duration) / 1000,
+    text: seg.text,
+  }));
+}
+
+exports.fetchYouTubeTranscript = fetchYouTubeTranscript;
 
 async function downloadYouTubeVideo(url, outDir) {
   log("Downloading YouTube via yt-dlp:", url);

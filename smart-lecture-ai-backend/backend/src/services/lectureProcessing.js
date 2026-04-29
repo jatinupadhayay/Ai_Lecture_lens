@@ -70,36 +70,53 @@ async function processLectureJob({
     lecture.errorMessage = "";
     await lecture.save();
 
-    const tmpDir = path.join(__dirname, "../../tmp", lectureId.toString());
-    const prepared = await aiService.prepareInputs({
-      videoPath,
-      videoUrl,
-      audioPath,
-      audioUrl,
-      pptPath,
-      pptUrl,
-      youtubeUrl,
-      tmpDir,
-    });
+    let transcript = null;
+    let frames = [];
 
-    cleanupPaths = prepared.cleanupPaths || [];
-
-    const inputFile = prepared.videoPath || prepared.audioPath || prepared.pptPath;
-    if (!inputFile) {
-      throw new Error(
-        youtubeUrl
-          ? "YouTube download failed — yt-dlp may not be installed on this server. Check server logs."
-          : "No valid lecture media was provided for processing."
-      );
+    // For YouTube URLs, try caption/transcript API first (avoids video download + IP blocks)
+    if (youtubeUrl) {
+      try {
+        console.log("[lectureProcessing] Trying YouTube caption API for:", youtubeUrl);
+        transcript = await aiService.fetchYouTubeTranscript(youtubeUrl);
+        console.log("[lectureProcessing] Caption API succeeded, segments:", transcript.length);
+      } catch (captionErr) {
+        console.warn("[lectureProcessing] Caption API failed, falling back to yt-dlp:", captionErr.message);
+        transcript = null;
+      }
     }
 
-    const [transcript, extractResult] = await Promise.all([
-      aiService.transcribe(inputFile),
-      aiService.extract(inputFile),
-    ]);
-    const frames = Array.isArray(extractResult)
-      ? extractResult
-      : extractResult?.frames || [];
+    // Fall back to file download + transcription if captions unavailable
+    if (!transcript) {
+      const tmpDir = path.join(__dirname, "../../tmp", lectureId.toString());
+      const prepared = await aiService.prepareInputs({
+        videoPath,
+        videoUrl,
+        audioPath,
+        audioUrl,
+        pptPath,
+        pptUrl,
+        youtubeUrl,
+        tmpDir,
+      });
+
+      cleanupPaths = prepared.cleanupPaths || [];
+
+      const inputFile = prepared.videoPath || prepared.audioPath || prepared.pptPath;
+      if (!inputFile) {
+        throw new Error(
+          youtubeUrl
+            ? "YouTube download failed — yt-dlp could not download the video and no captions were found. Check server logs."
+            : "No valid lecture media was provided for processing."
+        );
+      }
+
+      const [fetchedTranscript, extractResult] = await Promise.all([
+        aiService.transcribe(inputFile),
+        aiService.extract(inputFile),
+      ]);
+      transcript = fetchedTranscript;
+      frames = Array.isArray(extractResult) ? extractResult : extractResult?.frames || [];
+    }
 
     const lectureText = buildLectureText(transcript, frames);
     if (!lectureText) {
