@@ -26,6 +26,7 @@ interface AppStoreState {
   updateProfile: (data: { name?: string; email?: string }) => Promise<boolean>
   logout: () => void
   fetchLectures: () => Promise<void>
+  deleteLecture: (lectureId: string) => Promise<void>
   uploadLecture: (payload: LectureUploadPayload) => Promise<UploadLectureResult>
   fetchSummary: (lectureId: string) => Promise<void>
   reprocessLecture: (lectureId: string) => Promise<ReprocessLectureResult>
@@ -143,6 +144,13 @@ export const useAppStore = create<AppStoreState>()(
         } catch (error) {
           console.error("Fetch lectures failed:", error)
         }
+      },
+
+      async deleteLecture(lectureId) {
+        await apiService.deleteLecture(lectureId)
+        set((state) => ({
+          lectures: state.lectures.filter((l) => (l._id || l.id) !== lectureId),
+        }))
       },
 
       async uploadLecture(payload) {

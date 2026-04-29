@@ -28,6 +28,7 @@ import {
   PlayCircle,
   Plus,
   Presentation,
+  Trash2,
   Upload,
   Video,
   BookMarked,
@@ -35,7 +36,8 @@ import {
 
 export default function LecturesPage() {
   const router = useRouter()
-  const { lectures, uploadLecture, fetchLectures } = useAppStore()
+  const { lectures, uploadLecture, deleteLecture, fetchLectures } = useAppStore()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [form, setForm] = useState({
@@ -347,6 +349,21 @@ export default function LecturesPage() {
                   >
                     {lecture.status}
                   </span>
+                  {/* Delete button pinned top-left */}
+                  <button
+                    className="absolute top-3 left-3 h-6 w-6 rounded-full bg-white/70 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      if (!confirm("Delete this lecture?")) return
+                      setDeletingId(lectureId!)
+                      try { await deleteLecture(lectureId!) }
+                      finally { setDeletingId(null) }
+                    }}
+                  >
+                    {deletingId === lectureId
+                      ? <Loader2 className="h-3 w-3 animate-spin text-red-500" />
+                      : <Trash2 className="h-3 w-3 text-red-500" />}
+                  </button>
                   {/* Fade to card */}
                   <div
                     className="absolute bottom-0 inset-x-0 h-8 pointer-events-none"

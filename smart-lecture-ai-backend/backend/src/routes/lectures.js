@@ -69,6 +69,9 @@ router.post(
   lecturesController.uploadLecture // ✅ fixed naming
 );
 
+// 🗑 Delete lecture
+router.delete('/:id', protect, lecturesController.deleteLecture);
+
 // 📚 Get all lectures
 router.get('/', protect, lecturesController.getLectures);
 

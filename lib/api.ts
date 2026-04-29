@@ -107,6 +107,10 @@ export const apiService = {
     return response.data
   },
 
+  async deleteLecture(id: string): Promise<void> {
+    await axios.delete(`${API_URL}/lectures/${id}`, { headers: authHeaders() })
+  },
+
   async getQuizzes(): Promise<{ quizzes: Quiz[] }> {
     const response = await axios.get(`${API_URL}/quizzes`, {
       headers: authHeaders(),

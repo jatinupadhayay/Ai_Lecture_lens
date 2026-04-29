@@ -229,6 +229,19 @@ exports.processLecture = async (req, res) => {
   res.json(result);
 };
 
+exports.deleteLecture = async (req, res) => {
+  const lecture = await Lecture.findById(req.params.id);
+  if (!lecture) return res.status(404).json({ error: "Lecture not found" });
+
+  // Only the owner can delete
+  if (lecture.teacher?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ error: "Not authorized." });
+  }
+
+  await Lecture.findByIdAndDelete(req.params.id);
+  res.json({ ok: true });
+};
+
 // POST /api/lectures/:id/books  — add books to an existing lecture
 exports.uploadBookToLecture = async (req, res) => {
   const lecture = await Lecture.findById(req.params.id);
