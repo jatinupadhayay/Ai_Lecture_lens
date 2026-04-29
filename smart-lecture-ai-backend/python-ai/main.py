@@ -17,12 +17,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-# Import AI modules at startup so models load once and stay warm
-try:
-    from transcriber import extract_audio, transcribe_audio
-except Exception as _e:
-    extract_audio = transcribe_audio = None
-    print(f"[main] WARNING: transcriber import failed: {_e}", file=sys.stderr)
+# Lazy-load heavy modules — only import at startup if lightweight.
+# faster-whisper / torch are NOT imported here to avoid OOM on startup.
+# They load on first /transcribe request instead.
+
+extract_audio = transcribe_audio = None  # loaded lazily in /transcribe
 
 try:
     from extractor import extract_text_from_video
@@ -50,10 +49,10 @@ except Exception as _e:
 
 try:
     from vector_store import ingest, query as vs_query, collection_exists
-    from document_processor import DocumentProcessor
+    from document_processor import chunk_text as _chunk_text  # no DocumentProcessor class exists
     VECTOR_STORE_AVAILABLE = True
 except Exception as _e:
-    ingest = vs_query = collection_exists = None
+    ingest = vs_query = collection_exists = _chunk_text = None
     VECTOR_STORE_AVAILABLE = False
     print(f"[main] WARNING: vector_store import failed: {_e}", file=sys.stderr)
 
@@ -98,8 +97,14 @@ def health():
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
+    global transcribe_audio, extract_audio
     if transcribe_audio is None:
-        raise HTTPException(status_code=500, detail="Transcriber module unavailable")
+        try:
+            from transcriber import extract_audio as _ea, transcribe_audio as _ta
+            extract_audio = _ea
+            transcribe_audio = _ta
+        except Exception as _e:
+            raise HTTPException(status_code=500, detail=f"Transcriber unavailable: {_e}")
 
     req_id = uuid.uuid4().hex
     suffix = os.path.splitext(file.filename)[1] or ".bin"
@@ -215,8 +220,7 @@ async def ingest_text(payload: dict):
         raise HTTPException(status_code=400, detail="`document_id` and `text` are required")
 
     def _run():
-        from document_processor import chunk_text
-        chunks = chunk_text(text, chunk_size=400, overlap=50)
+        chunks = _chunk_text(text, chunk_size=400, overlap=50)
         return ingest(document_id, chunks, {"title": title})
 
     try:
