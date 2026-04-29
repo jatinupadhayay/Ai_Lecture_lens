@@ -149,7 +149,7 @@ export const useAppStore = create<AppStoreState>()(
       async deleteLecture(lectureId) {
         await apiService.deleteLecture(lectureId)
         set((state) => ({
-          lectures: state.lectures.filter((l) => (l._id || l.id) !== lectureId),
+          lectures: state.lectures.filter((l) => String(l._id || l.id) !== String(lectureId)),
         }))
       },
 

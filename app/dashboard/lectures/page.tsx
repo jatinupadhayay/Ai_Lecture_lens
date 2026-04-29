@@ -356,8 +356,14 @@ export default function LecturesPage() {
                       e.stopPropagation()
                       if (!confirm("Delete this lecture?")) return
                       setDeletingId(lectureId!)
-                      try { await deleteLecture(lectureId!) }
-                      finally { setDeletingId(null) }
+                      try {
+                        await deleteLecture(lectureId!)
+                        toast.success("Lecture deleted")
+                      } catch (err: any) {
+                        toast.error(err?.response?.data?.error || "Failed to delete lecture")
+                      } finally {
+                        setDeletingId(null)
+                      }
                     }}
                   >
                     {deletingId === lectureId
