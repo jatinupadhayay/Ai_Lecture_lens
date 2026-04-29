@@ -38,7 +38,7 @@ export default function ScoresPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Best Score", value: `${bestScore}%`, icon: Trophy, color: "text-amber-500" },
           { label: "Average", value: `${avgScore}%`, icon: TrendingUp, color: "text-primary" },

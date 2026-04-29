@@ -26,7 +26,7 @@ const MAX_W     = 320
 const DEFAULT_W = 210
 const COLLAPSE_THRESHOLD = 180
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const router   = useRouter()
   const pathname = usePathname()
   const [width, setWidth] = useState(DEFAULT_W)
@@ -83,7 +83,7 @@ export function Sidebar() {
             return (
               <button
                 key={item.href}
-                onClick={() => router.push(item.href)}
+                onClick={() => { router.push(item.href); onNavigate?.() }}
                 title={collapsed ? item.label : undefined}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] transition-all duration-150 text-left group",

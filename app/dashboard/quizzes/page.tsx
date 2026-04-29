@@ -78,7 +78,7 @@ export default function QuizzesPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { icon: Brain, label: "Total Quizzes", value: stats.total, color: "text-primary" },
           {

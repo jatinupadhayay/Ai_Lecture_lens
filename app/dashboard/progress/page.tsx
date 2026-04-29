@@ -40,7 +40,7 @@ export default function ProgressPage() {
       </div>
 
       {/* Overview cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Completion", value: `${overallProgress}%`, progress: overallProgress, sub: `${completedLectures.length}/${lectures.length} lectures`, icon: Target, color: "text-primary" },
           { label: "Avg Score", value: `${avgScore}%`, progress: avgScore, sub: `${scores.length} quizzes`, icon: Trophy, color: "text-amber-500" },
@@ -70,7 +70,7 @@ export default function ProgressPage() {
         </TabsList>
 
         <TabsContent value="lectures">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               { title: "Completed", items: completedLectures, icon: CheckCircle, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-950/20" },
               { title: "Processing", items: processingLectures, icon: Clock, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-950/20" },
@@ -119,7 +119,7 @@ export default function ProgressPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-3 gap-4 text-center pt-2 border-t">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center pt-2 border-t">
                     <div>
                       <p className="text-lg font-bold text-emerald-500">{scores.length > 0 ? Math.max(...scores) : 0}%</p>
                       <p className="text-xs text-muted-foreground">Best</p>

@@ -296,7 +296,7 @@ export default function LecturesPage() {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { label: "Total", value: counts.total },
           { label: "Completed", value: counts.completed },
@@ -315,7 +315,7 @@ export default function LecturesPage() {
       </div>
 
       {sortedLectures.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {sortedLectures.map((lecture) => {
             const lectureId = lecture._id || lecture.id
 

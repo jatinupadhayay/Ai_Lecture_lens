@@ -12,26 +12,36 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, User, GraduationCap } from "lucide-react"
+import { LogOut, User, GraduationCap, Menu } from "lucide-react"
 
-export function Navbar() {
+export function Navbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const router = useRouter()
   const { user, logout } = useAppStore()
 
   if (!user) return null
 
   return (
-    <nav className="h-[58px] border-b border-border bg-card px-5 flex items-center justify-between shrink-0 shadow-warm">
+    <nav className="h-[58px] border-b border-border bg-card px-4 sm:px-5 flex items-center justify-between shrink-0 shadow-warm">
       {/* Brand */}
-      <button
-        onClick={() => router.push("/dashboard")}
-        className="flex items-center gap-2.5 hover:opacity-75 transition-opacity"
-      >
+      <div className="flex items-center gap-2">
+        {/* Hamburger — mobile only */}
+        <button
+          className="md:hidden h-8 w-8 flex items-center justify-center rounded-lg hover:bg-accent transition-colors"
+          onClick={onMenuToggle}
+          aria-label="Open menu"
+        >
+          <Menu className="h-4 w-4 text-muted-foreground" />
+        </button>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="flex items-center gap-2.5 hover:opacity-75 transition-opacity"
+        >
         <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
           <GraduationCap className="h-3.5 w-3.5 text-primary-foreground" />
         </div>
         <span className="text-[14px] font-semibold tracking-tight text-foreground">Lecture Lens</span>
-      </button>
+        </button>
+      </div>
 
       {/* Right */}
       <div className="flex items-center gap-2">

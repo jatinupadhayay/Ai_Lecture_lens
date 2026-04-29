@@ -112,7 +112,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Achievement strip (700+ / 85% / 2x style) ── */}
-      <div className="grid grid-cols-3 divide-x divide-border rounded-2xl border border-border bg-card shadow-warm overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 divide-x-0 sm:divide-x divide-border rounded-2xl border border-border bg-card shadow-warm overflow-hidden">
         {([
           { value: String(lectureCounts.total || 0), label: "Lectures Uploaded" },
           { value: `${avgScore}%`,                   label: "Average Score"     },
@@ -126,7 +126,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 4 stat cards — editorial number-first ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {([
           { label: "Lectures",   value: lectureCounts.total,      sub: `${lectureCounts.completed} done`,  progress: completionPct,          href: "/dashboard/lectures",  accent: "text-foreground"   },
           { label: "Avg Score",  value: `${avgScore}%`,            sub: `Best ${bestScore}%`,               progress: avgScore,               href: "/dashboard/scores",    accent: "text-[#D97706]"    },
@@ -219,7 +219,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Main grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 -mt-2">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 -mt-2">
 
         {/* Lecture list */}
         <div className="lg:col-span-2 space-y-3">
