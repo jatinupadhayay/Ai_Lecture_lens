@@ -9,15 +9,16 @@ const { createAndIngestDocument } = require("./documentController");
 let aiQueue = null;
 
 function getQueue() {
-  if (!isRedisAvailable()) {
+  if (!isRedisAvailable()) return null;
+  // Upstash is serverless Redis — not compatible with BullMQ persistent connections
+  if (process.env.REDIS_HOST?.includes('upstash.io')) return null;
+
+  try {
+    if (!aiQueue) aiQueue = new Queue("ai-jobs", { connection });
+    return aiQueue;
+  } catch {
     return null;
   }
-
-  if (!aiQueue) {
-    aiQueue = new Queue("ai-jobs", { connection });
-  }
-
-  return aiQueue;
 }
 
 function isRemoteUrl(value) {

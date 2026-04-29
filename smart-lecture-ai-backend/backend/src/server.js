@@ -21,6 +21,9 @@ const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
 
+// Trust Railway/Render/Vercel reverse proxy
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
 // ✅ CORS — lock to FRONTEND_URL in production
 const allowedOrigins = process.env.FRONTEND_URL
   ? process.env.FRONTEND_URL.split(',').map(o => o.trim())
