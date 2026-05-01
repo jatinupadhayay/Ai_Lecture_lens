@@ -218,4 +218,20 @@ export const apiService = {
     })
     return response.data
   },
+
+  async getFlashcards(lectureId: string): Promise<{ flashcards: import("./types").Flashcard[] }> {
+    const response = await axios.get(`${API_URL}/lectures/${lectureId}/flashcards`, {
+      headers: authHeaders(),
+    })
+    return response.data
+  },
+
+  async generateFlashcards(lectureId: string, count = 10): Promise<{ flashcards: import("./types").Flashcard[] }> {
+    const response = await axios.post(
+      `${API_URL}/lectures/${lectureId}/flashcards`,
+      { count },
+      { headers: authHeaders() }
+    )
+    return response.data
+  },
 }

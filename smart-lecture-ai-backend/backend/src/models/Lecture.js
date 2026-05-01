@@ -58,6 +58,13 @@ const lectureSchema = new mongoose.Schema(
       },
     ],
     bookDocumentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Document" }],
+    flashcards: [
+      {
+        front: { type: String },
+        back: { type: String },
+        category: { type: String, default: "" },
+      },
+    ],
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }

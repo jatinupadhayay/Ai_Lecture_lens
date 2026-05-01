@@ -63,6 +63,7 @@ export interface Lecture {
   transcript?: TranscriptLine[]
   frames?: FrameData[]
   summary?: LectureSummary
+  flashcards?: Flashcard[]
   createdAt?: string
   teacher?: {
     name?: string
@@ -118,4 +119,14 @@ export interface Document {
 export interface ChatResponse {
   answer: string
   sources: { text: string; score: number }[]
+}
+
+export interface Flashcard {
+  front: string
+  back: string
+  category: string
+}
+
+export interface FlashcardsResponse {
+  flashcards: Flashcard[]
 }

@@ -281,6 +281,54 @@ Do not use any outside knowledge. Keep answers concise, accurate, and educationa
   res.json({ answer, sources: contextChunks.map((c) => ({ text: c.text, score: c.score ?? 0 })) });
 };
 
+exports.getFlashcards = async (req, res) => {
+  const lecture = await Lecture.findById(req.params.id).select("flashcards status title");
+  if (!lecture) return res.status(404).json({ message: "Lecture not found" });
+  res.json({ flashcards: lecture.flashcards || [] });
+};
+
+exports.generateFlashcards = async (req, res) => {
+  const lecture = await Lecture.findById(req.params.id);
+  if (!lecture) return res.status(404).json({ message: "Lecture not found" });
+  if (lecture.status !== "completed") {
+    return res.status(400).json({ message: "Lecture must be fully processed before generating flashcards." });
+  }
+
+  const content =
+    lecture.summary?.merged ||
+    lecture.summary?.ai ||
+    lecture.summary?.local ||
+    lecture.transcript?.map((t) => t.text).join(" ") ||
+    "";
+
+  if (!content) return res.status(400).json({ message: "No lecture content available to generate flashcards." });
+
+  const count = parseInt(req.body.count) || 10;
+  const systemPrompt = `You are a study assistant that creates concise, high-quality flashcards for students.
+Each flashcard has a FRONT (question or term) and a BACK (answer or definition).
+Also assign a short CATEGORY label (1-3 words, e.g. "Definition", "Concept", "Example", "Formula").
+Generate exactly ${count} flashcards. Return ONLY a JSON array, no markdown.`;
+
+  const userMessage = `Create ${count} flashcards from this lecture titled "${lecture.title}":\n\n${content.slice(0, 12000)}`;
+
+  let flashcards;
+  try {
+    const { geminiJSON } = require("../services/gemini");
+    const raw = await geminiJSON(systemPrompt, userMessage);
+    const arr = Array.isArray(raw) ? raw : raw.flashcards || [];
+    flashcards = arr
+      .filter((c) => c.front && c.back)
+      .map((c) => ({ front: String(c.front), back: String(c.back), category: String(c.category || "") }));
+  } catch (err) {
+    console.error("[lectureController] Flashcard generation failed:", err.message);
+    return res.status(500).json({ message: "Flashcard generation failed. Please try again." });
+  }
+
+  lecture.flashcards = flashcards;
+  await lecture.save();
+  res.json({ flashcards });
+};
+
 exports.deleteLecture = async (req, res) => {
   const lecture = await Lecture.findById(req.params.id);
   if (!lecture) return res.status(404).json({ error: "Lecture not found" });

@@ -86,6 +86,10 @@ router.post("/:id/process", protect, lecturesController.processLecture);
 // 💬 Chat with lecture transcript
 router.post("/:id/chat", protect, lecturesController.chatWithLecture);
 
+// 🃏 Flashcards
+router.get("/:id/flashcards", protect, lecturesController.getFlashcards);
+router.post("/:id/flashcards", protect, lecturesController.generateFlashcards);
+
 // Upload books to an existing lecture
 router.post(
   "/:id/books",

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { apiService } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
-import type { Document as DocType, Lecture, ChatMessage } from "@/lib/types"
+import type { Document as DocType, Lecture, ChatMessage, Flashcard } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,12 +25,15 @@ import {
   Download,
   ExternalLink,
   FileText,
+  Layers,
   Loader2,
   MessageSquare,
   Plus,
   Presentation,
   RefreshCw,
+  RotateCcw,
   Send,
+  Sparkles,
   Trash2,
   Upload,
   User,
@@ -62,6 +65,13 @@ export default function LectureViewerPage() {
   const chatBottomRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
+  // Flashcards
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([])
+  const [flashcardsLoading, setFlashcardsLoading] = useState(false)
+  const [flashcardsGenerating, setFlashcardsGenerating] = useState(false)
+  const [currentCard, setCurrentCard] = useState(0)
+  const [flipped, setFlipped] = useState(false)
+
   const fetchLecture = async () => {
     try {
       const data = await apiService.getLecture(id)
@@ -81,9 +91,41 @@ export default function LectureViewerPage() {
     } catch { /* ignore */ }
   }
 
+  const fetchFlashcards = async () => {
+    try {
+      setFlashcardsLoading(true)
+      const { flashcards: cards } = await apiService.getFlashcards(id)
+      setFlashcards(cards)
+    } catch { /* none yet */ } finally {
+      setFlashcardsLoading(false)
+    }
+  }
+
+  const handleGenerateFlashcards = async () => {
+    setFlashcardsGenerating(true)
+    setFlipped(false)
+    setCurrentCard(0)
+    try {
+      const { flashcards: cards } = await apiService.generateFlashcards(id, 10)
+      setFlashcards(cards)
+    } catch { /* ignore */ } finally {
+      setFlashcardsGenerating(false)
+    }
+  }
+
+  const exportCSV = () => {
+    const rows = [["Front", "Back", "Category"], ...flashcards.map((c) => [c.front, c.back, c.category])]
+    const csv = rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(",")).join("\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a"); a.href = url; a.download = "flashcards.csv"; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   useEffect(() => {
     fetchLecture()
     fetchBooks()
+    fetchFlashcards()
   }, [id])
 
   // Poll books while any are still processing
@@ -337,12 +379,20 @@ export default function LectureViewerPage() {
       <Card>
         <Tabs defaultValue="summary" className="w-full">
           <CardHeader className="pb-0">
-            <TabsList className={`grid w-full ${lecture.pptUrl ? "grid-cols-5" : "grid-cols-4"}`}>
+            <TabsList className={`grid w-full ${lecture.pptUrl ? "grid-cols-6" : "grid-cols-5"}`}>
               <TabsTrigger value="summary">
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Summary
               </TabsTrigger>
               <TabsTrigger value="transcript">
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Transcript
+              </TabsTrigger>
+              <TabsTrigger value="flashcards">
+                <Layers className="mr-1.5 h-3.5 w-3.5" /> Flashcards
+                {flashcards.length > 0 && (
+                  <span className="ml-1.5 text-[10px] bg-[#EAB308]/20 text-[#EAB308] px-1.5 py-0.5 rounded-full">
+                    {flashcards.length}
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="books">
                 <BookMarked className="mr-1.5 h-3.5 w-3.5" /> Books
@@ -394,6 +444,142 @@ export default function LectureViewerPage() {
                 <p className="text-sm text-muted-foreground">
                   {isProcessing ? "Transcript generation is in progress." : "Transcript not available."}
                 </p>
+              )}
+            </TabsContent>
+
+            {/* ── Flashcards tab ── */}
+            <TabsContent value="flashcards">
+              {flashcardsLoading ? (
+                <div className="flex items-center justify-center h-64">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : flashcards.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <div className="h-14 w-14 rounded-2xl bg-[#EAB308]/10 flex items-center justify-center">
+                    <Layers className="h-7 w-7 text-[#EAB308]" />
+                  </div>
+                  <div>
+                    <p className="font-medium mb-1">No flashcards yet</p>
+                    <p className="text-sm text-muted-foreground max-w-xs">
+                      Generate AI flashcards from this lecture to start studying.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleGenerateFlashcards}
+                    disabled={flashcardsGenerating || lecture.status !== "completed"}
+                    className="bg-[#EAB308] hover:bg-[#EAB308]/90 text-black font-semibold"
+                  >
+                    {flashcardsGenerating
+                      ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating…</>
+                      : <><Sparkles className="mr-2 h-4 w-4" />Generate Flashcards</>}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {/* Controls */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Card <span className="font-semibold text-foreground">{currentCard + 1}</span> of {flashcards.length}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={exportCSV} className="h-8 text-xs">
+                        <Download className="mr-1.5 h-3.5 w-3.5" /> Export CSV
+                      </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={handleGenerateFlashcards}
+                        disabled={flashcardsGenerating}
+                        className="h-8 text-xs"
+                      >
+                        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${flashcardsGenerating ? "animate-spin" : ""}`} />
+                        Regenerate
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Flip card */}
+                  <div
+                    className="relative mx-auto cursor-pointer select-none"
+                    style={{ height: 240, perspective: "1000px", maxWidth: 600 }}
+                    onClick={() => setFlipped((f) => !f)}
+                  >
+                    <div
+                      className="relative w-full h-full transition-transform duration-500"
+                      style={{ transformStyle: "preserve-3d", transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}
+                    >
+                      {/* Front */}
+                      <div
+                        className="absolute inset-0 rounded-2xl border border-border bg-card flex flex-col items-center justify-center p-8 gap-3"
+                        style={{ backfaceVisibility: "hidden" }}
+                      >
+                        {flashcards[currentCard]?.category && (
+                          <span className="text-[11px] px-2.5 py-1 rounded-full bg-[#EAB308]/15 text-[#EAB308] font-medium uppercase tracking-wide">
+                            {flashcards[currentCard].category}
+                          </span>
+                        )}
+                        <p className="text-base font-semibold text-center leading-snug">
+                          {flashcards[currentCard]?.front}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-2">Tap to reveal answer</p>
+                      </div>
+                      {/* Back */}
+                      <div
+                        className="absolute inset-0 rounded-2xl border border-[#EAB308]/30 bg-[#EAB308]/5 flex flex-col items-center justify-center p-8 gap-3"
+                        style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+                      >
+                        <p className="text-sm text-center leading-relaxed text-foreground/90">
+                          {flashcards[currentCard]?.back}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-2">Tap to flip back</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Navigation */}
+                  <div className="flex items-center justify-center gap-3">
+                    <Button
+                      variant="outline" size="sm"
+                      disabled={currentCard === 0}
+                      onClick={() => { setCurrentCard((c) => c - 1); setFlipped(false) }}
+                      className="h-9 px-5"
+                    >
+                      ← Prev
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm"
+                      onClick={() => setFlipped(false)}
+                      className="h-9 px-3 text-muted-foreground"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="outline" size="sm"
+                      disabled={currentCard === flashcards.length - 1}
+                      onClick={() => { setCurrentCard((c) => c + 1); setFlipped(false) }}
+                      className="h-9 px-5"
+                    >
+                      Next →
+                    </Button>
+                  </div>
+
+                  {/* Card grid preview */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 pt-2">
+                    {flashcards.map((card, i) => (
+                      <button
+                        key={i}
+                        onClick={() => { setCurrentCard(i); setFlipped(false) }}
+                        className={cn(
+                          "text-left p-3 rounded-xl border text-xs transition-all",
+                          i === currentCard
+                            ? "border-[#EAB308] bg-[#EAB308]/10 text-foreground"
+                            : "border-border bg-muted/30 text-muted-foreground hover:border-[#EAB308]/40"
+                        )}
+                      >
+                        <p className="font-medium line-clamp-2">{card.front}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </TabsContent>
 
