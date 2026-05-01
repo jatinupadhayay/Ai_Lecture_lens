@@ -686,7 +686,7 @@ export default function LectureViewerPage() {
                       ? "This lecture is still being processed. Check back in a moment."
                       : "This lecture needs to be processed successfully before you can ask questions."}
                   </p>
-                  {!isProcessing && lecture.status !== "completed" && (
+                  {!isProcessing && (
                     <Button size="sm" variant="outline" onClick={handleReprocess} disabled={reprocessing}>
                       <RefreshCw className={`mr-2 h-3.5 w-3.5 ${reprocessing ? "animate-spin" : ""}`} />
                       Retry Processing
@@ -695,6 +695,7 @@ export default function LectureViewerPage() {
                 </div>
               )}
               {lecture.status === "completed" && (
+              <>
               <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-4">
                 {chatMessages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
@@ -775,6 +776,7 @@ export default function LectureViewerPage() {
                   <Send className="h-3.5 w-3.5" />
                 </Button>
               </div>
+              </>
               )}
             </TabsContent>
 
